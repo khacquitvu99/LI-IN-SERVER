@@ -263,10 +263,10 @@ export default function CastingPage() {
 
             {/* Các thành phần quy trình sản xuất */}
             <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 flex flex-col gap-6">
-              <div className="flex items-center justify-between pb-2 border-b border-amber-200 mb-3">
-                <h3 className="text-2xl font-bold text-amber-900 flex items-center gap-2">
-                  <Sparkles className="w-6 h-6" />
-                  Polishing Process
+              <div className="flex items-center justify-between pb-1.5 sm:pb-2 border-b border-amber-200 mb-2.5 sm:mb-3">
+                <h3 className="text-lg sm:text-2xl font-bold text-amber-900 flex items-center gap-1.5 sm:gap-2">
+                  <Sparkles className="w-4 h-4 sm:w-6 sm:h-6 shrink-0" />
+                  <span>Polishing Process</span>
                 </h3>
               </div>
 
@@ -274,20 +274,20 @@ export default function CastingPage() {
               <Polishing data={polishingData} onChange={setPolishingData} />
 
               {/* --- PICTURE FRAME & UPLOAD ANH --- */}
-              <div className="mt-4 pt-4 border-t border-gray-200">
-                <h4 className="text-sm font-bold text-amber-900 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  Product Progress Images
+              <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-200">
+                <h4 className="text-xs sm:text-sm font-bold text-amber-900 mb-2 sm:mb-3 flex items-center gap-1.5 sm:gap-2">
+                  <span className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-amber-500 shrink-0" />
+                  <span>Product Progress Images</span>
                 </h4>
 
-                <div className="flex items-center gap-6 p-4 bg-amber-50/30 rounded-xl border border-dashed border-amber-300">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 p-3 sm:p-4 bg-amber-50/30 rounded-xl border border-dashed border-amber-300">
                   {/* Khung hiển thị ảnh Preview */}
-                  <div className="flex flex-wrap gap-3">
+                  <div className="flex flex-wrap gap-2 sm:gap-3 shrink-0">
                     {allImagesToShow.length > 0 ? (
                       allImagesToShow.map((imgSrc, index) => (
                         <div
                           key={index}
-                          className="w-36 h-36 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative group"
+                          className="w-24 h-24 sm:w-36 sm:h-36 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm relative group"
                         >
                           <img
                             src={imgSrc}
@@ -297,7 +297,7 @@ export default function CastingPage() {
                           <button
                             type="button"
                             onClick={() => handleRemoveImage(index)}
-                            className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-xs"
+                            className="absolute top-1 right-1 bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity text-xs cursor-pointer"
                             title="Xóa ảnh"
                           >
                             ✕
@@ -305,10 +305,10 @@ export default function CastingPage() {
                         </div>
                       ))
                     ) : (
-                      <div className="w-36 h-36 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
-                        <div className="text-center p-2">
-                          <Image className="w-20 h-20 opacity-30 mx-auto" />
-                          <span className="text-[11px] text-gray-500 font-medium">
+                      <div className="w-24 h-24 sm:w-36 sm:h-36 bg-white rounded-lg border border-gray-200 flex items-center justify-center overflow-hidden shrink-0 shadow-sm">
+                        <div className="text-center p-1.5 sm:p-2">
+                          <Image className="w-12 h-12 sm:w-20 sm:h-20 opacity-30 mx-auto" />
+                          <span className="text-[10px] sm:text-[11px] text-gray-500 font-medium">
                             No Image
                           </span>
                         </div>
@@ -317,17 +317,17 @@ export default function CastingPage() {
                   </div>
 
                   {/* Phần thao tác chọn file */}
-                  <div className="flex-1 flex flex-col justify-center">
-                    <p className="text-sm font-medium text-gray-700 mb-1">
+                  <div className="flex-1 min-w-0 flex flex-col justify-center">
+                    <p className="text-xs sm:text-sm font-medium text-gray-700 mb-0.5 sm:mb-1">
                       Upload design photo or jewelry blueprint
                     </p>
-                    <p className="text-xs text-gray-500 mb-3">
+                    <p className="text-[11px] sm:text-xs text-gray-500 mb-2 sm:mb-3">
                       Support PNG, JPG, WEBP up to 10MB.
                     </p>
 
-                    <label className="inline-flex items-center justify-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium rounded-lg cursor-pointer shadow-sm transition-colors w-fit gap-2">
-                      <Upload className="h-4 w-4"></Upload>
-                      Choose Image File
+                    <label className="inline-flex items-center justify-center px-3 sm:px-4 py-1.5 sm:py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs sm:text-sm font-medium rounded-lg cursor-pointer shadow-sm transition-colors w-fit max-w-full gap-1.5 sm:gap-2">
+                      <Upload className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />
+                      <span className="truncate">Choose Image File</span>
                       <input
                         type="file"
                         accept="image/*"

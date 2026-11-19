@@ -1,12 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import {
-  BellRing,
-  Clock,
-  RefreshCcw,
-  Megaphone,
-} from "lucide-react";
+import { BellRing, Clock, RefreshCcw, Megaphone } from "lucide-react";
 import { NotificationItem } from "@/types";
 import { getStatusLabel } from "@/components/attribute"; // 🌟 Import hàm ánh xạ dùng chung
 
@@ -67,19 +62,19 @@ export default function LiveStatusScroll({
   return (
     <div className="w-full bg-white border border-amber-200 rounded-xl shadow-lg overflow-hidden">
       {/* Header của khung thông báo */}
-      <div className="bg-linear-to-r from-amber-500 to-amber-600 text-white px-4 py-2.5 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm font-bold">
-          <BellRing className="w-4 h-4 animate-bounce text-amber-100" />
-          <span>Notification processing</span>
+      <div className="bg-linear-to-r from-amber-500 to-amber-600 text-white px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-xs sm:text-sm font-bold min-w-0">
+          <BellRing className="w-4 h-4 animate-bounce text-amber-100 shrink-0" />
+          <span className="truncate">Notification processing</span>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full font-medium">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <span className="text-[11px] sm:text-xs bg-white/20 px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
             {notifications.length} logs recorded
           </span>
           <button
             onClick={fetchLogs}
-            className="p-1 hover:bg-white/20 rounded-full transition-colors"
+            className="p-1 hover:bg-white/20 rounded-full transition-colors shrink-0 cursor-pointer"
             title="Làm mới log"
           >
             <RefreshCcw
@@ -90,7 +85,7 @@ export default function LiveStatusScroll({
       </div>
 
       {/* Vùng chứa danh sách có thanh cuộn (Scrollable container) */}
-      <div className="max-h-28 overflow-y-auto divide-y divide-amber-100 p-2 scrollbar-thin scrollbar-thumb-amber-300">
+      <div className="max-h-20 sm:max-h-20 overflow-y-auto divide-y divide-amber-100 p-1.5 sm:p-2 scrollbar-thin scrollbar-thumb-amber-300">
         {notifications.length > 0 ? (
           notifications.map((item, index) => {
             const isLatest = index === 0;
@@ -102,57 +97,65 @@ export default function LiveStatusScroll({
             return (
               <div
                 key={item.id}
-                className={`flex items-center justify-between px-1 py-2.5 transition-all rounded-lg text-xs my-0.5 ${
+                className={`flex items-center justify-between gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1.5 sm:py-2 transition-all rounded-lg text-xs my-0.5 ${
                   isLatest
                     ? "bg-amber-50/90 border border-amber-300 shadow-2xs font-semibold"
                     : "hover:bg-amber-50/40"
                 }`}
               >
-                <div className="flex items-center gap-2.5">
-                  <Megaphone className="w-4 h-4 text-amber-600 shrink-0" />
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
+                  <Megaphone className="w-4 h-4 text-amber-600 shrink-0 hidden sm:block" />
 
                   {/* Hiển thị trực quan câu thông báo trạng thái */}
-                  <span className="text-gray-700 font-medium flex items-center gap-1.5 flex-wrap">
-                    <span>The product</span>
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 font-bold text-amber-700 rounded-md">
+                  <span className="text-gray-700 font-medium flex items-center gap-1 sm:gap-1.5 min-w-0 truncate">
+                    <span className="hidden sm:inline shrink-0">
+                      The product
+                    </span>
+                    <span className="inline-flex items-center px-1 font-bold text-amber-700 rounded-md shrink-0">
                       {item.productName}
                     </span>
-                    <span>status has just been updated to</span>
+                    <span className="hidden sm:inline shrink-0">
+                      status has just been updated to
+                    </span>
 
-                    <span className="px-2 font-semibold tracking-wide uppercase text-red-700">
+                    <span className="font-semibold tracking-wide uppercase text-red-700 truncate text-[10px] sm:text-xs">
                       {statusLabel}
                     </span>
 
                     {/* 🔔 Biểu tượng chuông động (BellRing) xuất hiện ở phía sau dòng đầu tiên */}
                     {isLatest && (
-                      <BellRing className="w-4 h-4 text-red-600 animate-ping inline-block ml-1" />
+                      <BellRing className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-red-600 animate-ping inline-block shrink-0" />
                     )}
                   </span>
                 </div>
 
-                {/* Hiển thị thời gian thực đầy đủ cả Ngày và Giờ */}
+                {/* Hiển thị giờ phút giây + ngày/tháng (dd/mm) */}
                 <div
-                  className={`flex items-center gap-1 font-medium px-2 py-1 rounded-md shrink-0 ${
+                  className={`flex items-center gap-1 font-medium px-1.5 sm:px-2 py-0.5 rounded-md shrink-0 text-[10px] sm:text-xs leading-none ${
                     isLatest
-                      ? "bg-white text-amber-900 border-amber-300 shadow-2xs"
-                      : "text-gray-500 bg-gray-50 border-gray-100"
+                      ? "bg-white text-amber-900 border border-amber-300 shadow-2xs"
+                      : "text-gray-500 bg-gray-50 border border-gray-100"
                   }`}
                 >
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>
+                  <Clock className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-amber-600 shrink-0" />
+                  <span className="whitespace-nowrap">
                     {(() => {
                       if (!item.timestamp) return "";
                       const parsedDate = new Date(item.timestamp);
-                      return !isNaN(parsedDate.getTime())
-                        ? parsedDate.toLocaleString("vi-VN", {
-                            year: "numeric",
-                            month: "2-digit",
-                            day: "2-digit",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                            second: "2-digit",
-                          })
-                        : item.timestamp;
+                      if (isNaN(parsedDate.getTime())) return item.timestamp;
+
+                      const timePart = parsedDate.toLocaleTimeString("vi-VN", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        second: "2-digit",
+                      });
+                      const day = String(parsedDate.getDate()).padStart(2, "0");
+                      const month = String(parsedDate.getMonth() + 1).padStart(
+                        2,
+                        "0",
+                      );
+
+                      return `${timePart} ${day}/${month}`;
                     })()}
                   </span>
                 </div>

@@ -94,51 +94,57 @@ export default function LabelContent({ isEditable = false }: LabelProps) {
   }, [pID]);
 
   return (
-    <div className="bg-linear-to-r from-amber-500 to-amber-600 rounded-xl p-4 text-white shadow-xl flex items-center justify-between">
-      <div className="flex items-center space-x-3 w-full">
-        {/* Khung chứa danh sách các thông tin */}
-        <div className="w-full flex items-center justify-between gap-6">
-          {/* Phần 1: Product Name (Nằm bên trái) kèm Icon */}
-          <div className="flex-1 flex flex-col">
-            <div className="flex items-center space-x-2 mb-1">
-              <Package className="w-5 h-5 text-amber-200" />
-              <span className="text-xs uppercase tracking-wider text-amber-100 font-semibold block">
-                Product Name
-              </span>
-            </div>
-            <input
-              type="text"
-              value={productName}
-              readOnly={!isEditable}
-              onChange={(e) => {
-                if (isEditable) {
-                  setProductName(e.target.value);
-                }
-              }}
-              placeholder="NO PRODUCT SELECTED..."
-              className="bg-transparent text-xl font-extrabold text-white placeholder-amber-200 uppercase tracking-wide w-full focus:outline-none pb-0.5 "
-            />
-          </div>
-
-          {/* Phần 2: Expected Delivery Date (Nằm bên phải) */}
-          <div className="flex-1 flex flex-col justify-right items-end">
-            <span className="text-xs uppercase tracking-wider text-amber-100 font-semibold block mb-1">
-              <CalendarFold className="w-4 h-4 text-amber-100 inline mr-1" />
-              Expected Delivery Date
+    <div className="bg-linear-to-r from-amber-500 to-amber-600 rounded-xl p-3 sm:p-4 text-white shadow-xl flex items-center justify-between">
+      <div className="w-full flex items-center justify-between gap-2.5 sm:gap-6 min-w-0">
+        {/* Phần 1: Product Name (Nằm bên trái) kèm Icon */}
+        <div className="flex-1 min-w-0 flex flex-col">
+          <div className="flex items-center gap-1.5 sm:space-x-2 mb-0.5 sm:mb-1">
+            <Package className="w-4 h-4 sm:w-5 sm:h-5 text-amber-200 shrink-0" />
+            <span className="text-[10px] sm:text-xs uppercase tracking-wider text-amber-100 font-semibold truncate">
+              Product Name
             </span>
-            <input
-              type="text"
-              value={dateFinished}
-              readOnly={!isEditable}
-              onChange={(e) => {
-                if (isEditable) {
-                  setDateFinished(e.target.value);
-                }
-              }}
-              placeholder="N/A"
-              className="text-right bg-transparent text-sm font-semibold text-white placeholder-amber-200 w-full focus:outline-none pb-0.5"
-            />
           </div>
+          <input
+            type="text"
+            value={productName}
+            readOnly={!isEditable}
+            onChange={(e) => {
+              if (isEditable) {
+                setProductName(e.target.value);
+              }
+            }}
+            placeholder="NO PRODUCT SELECTED..."
+            className="bg-transparent text-sm sm:text-xl font-extrabold text-white placeholder-amber-200 uppercase tracking-wide w-full min-w-0 focus:outline-none pb-0.5"
+          />
+        </div>
+
+        {/* Phần 2: Ngày tháng (Nằm bên phải) */}
+        <div className="flex flex-col items-end shrink-0 max-w-[42%] sm:max-w-none">
+          <span className="text-[10px] sm:text-xs uppercase tracking-wider text-amber-100 font-semibold flex items-center gap-1 mb-0.5 sm:mb-1 whitespace-nowrap">
+            <CalendarFold className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-100 shrink-0" />
+            <span>Delivery Date</span>
+          </span>
+          <input
+            type="text"
+            value={(() => {
+              if (!dateFinished) return "";
+              const parsed = new Date(dateFinished);
+              if (!isNaN(parsed.getTime())) {
+                const day = String(parsed.getDate()).padStart(2, "0");
+                const month = String(parsed.getMonth() + 1).padStart(2, "0");
+                return `${day}/${month}`;
+              }
+              return dateFinished;
+            })()}
+            readOnly={!isEditable}
+            onChange={(e) => {
+              if (isEditable) {
+                setDateFinished(e.target.value);
+              }
+            }}
+            placeholder="N/A"
+            className="text-right bg-transparent text-xs sm:text-sm font-semibold text-white placeholder-amber-200 w-full focus:outline-none pb-0.5"
+          />
         </div>
       </div>
     </div>

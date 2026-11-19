@@ -69,22 +69,22 @@ export default function NavPage() {
   const isCNC = pathname === "/CNC";
   return (
     <nav className="fixed top-0 left-0 w-full z-50 bg-white border-b-2 border-amber-400/80 shadow-sm">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 relative flex items-center justify-between">
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-6 lg:px-8 h-16 sm:h-20 relative flex items-center justify-between gap-2">
         {/* Góc trái: Logo */}
-        <div className="flex items-center space-x-3 z-10">
+        <div className="flex items-center space-x-2 sm:space-x-3 z-10 shrink-0">
           <Link href="/">
             <img
               src="/LOGO-LIIN.jpg"
               alt="LI-IN JEWELRY"
-              className="h-20 w-auto object-contain mix-blend-multiply contrast-125 cursor-pointer"
+              className="h-12 sm:h-20 w-auto object-contain mix-blend-multiply contrast-125 cursor-pointer"
             />
           </Link>
         </div>
 
         {/* Tiêu đề căn giữa */}
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <div className="flex-1 min-w-0 px-1 sm:px-28 flex items-center justify-center pointer-events-none">
           <h1
-            className={`text-2xl sm:text-3xl font-bold tracking-tight pointer-events-auto uppercase ${
+            className={`text-xs sm:text-xl md:text-2xl lg:text-3xl font-bold tracking-tight pointer-events-auto uppercase text-center leading-tight line-clamp-2 sm:line-clamp-1 ${
               isHomePage ? "text-amber-500" : "text-gray-800"
             }`}
           >
@@ -101,19 +101,19 @@ export default function NavPage() {
                       : isPrintingPage
                         ? "Printing 3D Management"
                         : isCNC
-                        ? "CNC/R&D Management"
-                        : "ORDER MANAGEMENT"}
+                          ? "CNC/R&D Management"
+                          : "ORDER MANAGEMENT"}
           </h1>
         </div>
 
         {/* Góc phải: Profile hoặc Nút Login */}
-        <div className="flex items-center space-x-4 z-10">
+        <div className="flex items-center space-x-2 sm:space-x-4 z-10 shrink-0">
           {isAuthenticated && user ? (
             <div className="relative" ref={menuRef}>
               <button
                 type="button"
                 onClick={() => setIsMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-all cursor-pointer"
+                className="flex items-center gap-1.5 sm:gap-2.5 p-1 sm:p-1.5 rounded-xl hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-all cursor-pointer"
               >
                 <img
                   src={
@@ -121,9 +121,9 @@ export default function NavPage() {
                     "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"
                   }
                   alt={user.name}
-                  className="w-9 h-9 rounded-full object-cover border-2 border-amber-400 shadow-xs"
+                  className="w-8 h-8 sm:w-9 sm:h-9 rounded-full object-cover border-2 border-amber-400 shadow-xs shrink-0"
                 />
-                <div className="text-left hidden sm:block">
+                <div className="text-left hidden md:block">
                   <p className="text-xs font-bold text-gray-900 leading-tight">
                     {user.name}
                   </p>
@@ -131,13 +131,13 @@ export default function NavPage() {
                     {user.role || "Staff"}
                   </p>
                 </div>
-                <ChevronDown className="w-4 h-4 text-gray-500" />
+                <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-gray-500 shrink-0" />
               </button>
 
               {/* Popover Logout */}
               {isMenuOpen && (
                 <div className="absolute right-0 mt-2 w-48 bg-white border border-amber-200 rounded-xl shadow-lg py-1 z-50 animate-fadeIn">
-                  <div className="px-4 py-2 border-b border-amber-100 sm:hidden">
+                  <div className="px-4 py-2 border-b border-amber-100 md:hidden">
                     <p className="text-xs font-bold text-gray-900">
                       {user.name}
                     </p>
@@ -165,7 +165,7 @@ export default function NavPage() {
           ) : (
             <Link
               href="/login"
-              className="px-5 py-2 text-sm font-medium text-amber-950 bg-amber-200 hover:bg-amber-400 rounded-lg shadow-sm hover:shadow transition-all active:scale-95 inline-block text-center"
+              className="px-3 py-1.5 sm:px-5 sm:py-2 text-xs sm:text-sm font-medium text-amber-950 bg-amber-200 hover:bg-amber-400 rounded-lg shadow-sm hover:shadow transition-all active:scale-95 inline-block text-center whitespace-nowrap"
             >
               Login
             </Link>

@@ -82,7 +82,7 @@ export default function Footer({ onSave, itemCode = "" }: FooterProps) {
 
   return (
     <>
-      <div className="flex justify-end space-x-3 pt-2">
+      <div className="flex flex-wrap justify-end gap-2 sm:gap-3 pt-2">
         {/* Save */}
         <button
           type="button"
@@ -94,7 +94,7 @@ export default function Footer({ onSave, itemCode = "" }: FooterProps) {
               console.warn("⚠️ Cảnh báo: onSave đang bị undefined!");
             }
           }}
-          className="px-6 py-2.5 bg-amber-600 hover:bg-amber-300 active:bg-amber-700 text-white rounded-lg"
+          className="px-3.5 sm:px-6 py-1.5 sm:py-2.5 bg-amber-600 hover:bg-amber-300 active:bg-amber-700 text-white text-xs sm:text-sm font-medium rounded-lg transition-colors cursor-pointer"
         >
           Save
         </button>
@@ -124,7 +124,7 @@ export default function Footer({ onSave, itemCode = "" }: FooterProps) {
               }
             }}
             disabled={isDeleting}
-            className="px-6 py-2.5 bg-amber-800 hover:bg-amber-500 active:bg-amber-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-all cursor-pointer disabled:opacity-50"
+            className="px-3.5 sm:px-6 py-1.5 sm:py-2.5 bg-amber-800 hover:bg-amber-500 active:bg-amber-800 text-white text-xs font-semibold rounded-lg shadow-xs transition-all cursor-pointer disabled:opacity-50"
           >
             {isDeleting ? "Deleting..." : "Delete Order"}
           </button>
@@ -134,10 +134,10 @@ export default function Footer({ onSave, itemCode = "" }: FooterProps) {
         <button
           type="button"
           onClick={() => setIsExportOpen(true)}
-          className="px-6 py-2.5 bg-gray-800 hover:bg-gray-500 active:bg-black text-white font-semibold rounded-lg shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+          className="px-3.5 sm:px-6 py-1.5 sm:py-2.5 bg-gray-800 hover:bg-gray-500 active:bg-black text-white text-xs sm:text-sm font-semibold rounded-lg shadow-xs transition-all flex items-center gap-1.5 sm:gap-2 cursor-pointer"
         >
-          <Download className="h-5 w-5" />
-          Export
+          <Download className="h-3.5 w-3.5 sm:h-5 sm:w-5 shrink-0" />
+          <span>Export</span>
         </button>
       </div>
 
