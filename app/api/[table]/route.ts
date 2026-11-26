@@ -1,65 +1,66 @@
-import { NextResponse } from "next/server";
-import { dbGetAll, dbInsert, checkUserDuplicate } from "@/service/baseService";
+import { NextRequest, NextResponse } from "next/server";
+import path from "node:path";
+import fs from "node:fs/promises";
+import { resolveSafeMediaPath } from "@/lib/media-storage";
 
-const getIdField = (table: string) => {
-  const lowerTable = table.toLowerCase();
-  if (lowerTable === "user") return "UserID";
-  if (lowerTable === "product") return "ProductID";
-  return "ID";
-};
-
-export async function GET(
-  request: Request,
-  context: { params: Promise<{ table: string }> },
-) {
-  try {
-    const { table } = await context.params;
-    const idField = getIdField(table);
-    const data = await dbGetAll(table, idField);
-    return NextResponse.json({ success: true, data });
-  } catch (error: any) {
-    console.error("Lỗi GET API:", error);
-    return NextResponse.json(
-      { success: false, message: error.message },
-      { status: 500 },
-    );
+function getContentType(filePath: string): string {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".png":
+      return "image/png";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    case ".svg":
+      return "image/svg+xml";
+    case ".avif":
+      return "image/avif";
+    case ".jpg":
+    case ".jpeg":
+    default:
+      return "image/jpeg";
   }
 }
 
-export async function POST(
-  request: Request,
-  context: { params: Promise<{ table: string }> },
-) {
+function safeDecode(value: string): string | null {
   try {
-    const { table } = await context.params;
-    const body = await request.json();
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
 
-    // Nếu bảng là User, tiến hành check trùng Email hoặc Name
-    if (table.toLowerCase() === "user") {
-      const isDuplicate = await checkUserDuplicate(
-        table,
-        body.Email,
-        body.Name,
-      );
-      if (isDuplicate) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              "Tên tài khoản (Name) hoặc Email đã tồn tại trong hệ thống!",
-          },
-          { status: 400 },
-        );
-      }
+export async function GET(request: NextRequest) {
+  try {
+    const queryPath = request.nextUrl.searchParams.get("path");
+    if (!queryPath) {
+      return new NextResponse("Invalid path", { status: 400 });
     }
 
-    await dbInsert(table, body);
-    return NextResponse.json({ success: true, message: "Thêm thành công!" });
+    const decodedPath = safeDecode(queryPath);
+    if (!decodedPath) {
+      return new NextResponse("Invalid encoded path", { status: 400 });
+    }
+
+    const resolvedPath = resolveSafeMediaPath(decodedPath);
+    if (!resolvedPath) {
+      return new NextResponse("Forbidden", { status: 403 });
+    }
+
+    const fileBuffer = await fs.readFile(resolvedPath);
+
+    return new NextResponse(new Uint8Array(fileBuffer), {
+      headers: {
+        "Content-Type": getContentType(resolvedPath),
+        "Cache-Control": "public, max-age=31536000, immutable",
+      },
+    });
   } catch (error: any) {
-    console.error("Lỗi POST API:", error);
-    return NextResponse.json(
-      { success: false, message: error.message },
-      { status: 500 },
-    );
+    if (error?.code === "ENOENT") {
+      return new NextResponse("File not found", { status: 404 });
+    }
+    console.error("Lỗi đọc ảnh:", error);
+    return new NextResponse("Internal Server Error", { status: 500 });
   }
 }

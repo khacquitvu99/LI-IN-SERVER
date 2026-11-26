@@ -1,50 +1,78 @@
-import { writeFile, mkdir, unlink } from "fs/promises";
-import path from "path";
+import { writeFile, mkdir, unlink } from "node:fs/promises";
+import path from "node:path";
+import crypto from "node:crypto";
 
 /**
- * Lưu file tải lên vào thư mục chỉ định (mặc định là public/uploads)
- * @param file File object nhận từ FormData
- * @param subFolder Thư mục con nếu muốn phân loại (ví dụ: "avatars", "products")
- * @returns Đường dẫn công khai của file để lưu vào SQL Server
+ * Lấy thư mục gốc lưu media tách biệt khỏi source code.
+ * Mặc định "../MEDIA" (ngang cấp thư mục project), cấu hình qua MEDIA_ROOT.
+ */
+export function getMediaRoot(): string {
+  const configuredPath = process.env.MEDIA_ROOT?.trim() || "../MEDIA";
+  return path.resolve(process.cwd(), configuredPath);
+}
+
+/**
+ * Lưu file tải lên vào thư mục MEDIA tách biệt (chia theo subFolder/YYYY/MM).
+ * Trả về đường dẫn tương đối (ví dụ: "products/2026/11/1732410000-a1b2c3d4.jpg")
+ * để lưu vào database mà không phụ thuộc đường dẫn máy/server.
  */
 export async function uploadFile(
   file: File,
   subFolder: string = "uploads",
+  date: Date = new Date(),
 ): Promise<string> {
   const bytes = await file.arrayBuffer();
   const buffer = Buffer.from(bytes);
 
-  // Thư mục lưu trữ thực tế trên ổ đĩa
-  const uploadDir = path.join(process.cwd(), "public", subFolder);
+  const safeSubFolder = subFolder
+    .replace(/^\/+|\/+$/g, "")
+    .replace(/\.\./g, "");
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
 
-  // Tự động tạo thư mục nếu chưa tồn tại
+  const relativeDir = path.posix.join(safeSubFolder, year, month);
+  const uploadDir = path.join(getMediaRoot(), safeSubFolder, year, month);
+
   await mkdir(uploadDir, { recursive: true });
 
-  // Tạo tên file độc nhất để tránh bị ghi đè trùng lặp
-  const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-  const ext = path.extname(file.name);
+  const ext = path.extname(file.name).toLowerCase() || ".bin";
+  const uniqueSuffix = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const fileName = `${uniqueSuffix}${ext}`;
   const filePath = path.join(uploadDir, fileName);
 
-  // Ghi file
   await writeFile(filePath, buffer);
 
-  // Trả về đường dẫn truy cập công khai
-  return `/${subFolder}/${fileName}`;
+  return path.posix.join(relativeDir, fileName);
 }
 
 /**
- * Xóa file trên server khi không còn sử dụng hoặc khi xóa bản ghi
- * @param fileUrl Đường dẫn file lưu trong DB (ví dụ: /uploads/123.jpg)
+ * Xóa file bên trong MEDIA_ROOT dựa theo đường dẫn tương đối lưu trong DB.
+ * Có chặn path traversal để không xóa nhầm file ngoài thư mục MEDIA.
  */
-export async function deleteFile(fileUrl: string) {
+export async function deleteFile(storedPath: string): Promise<void> {
   try {
-    if (!fileUrl) return;
-    // Lọc bỏ dấu / ở đầu để lấy đường dẫn tương đối từ gốc dự án
-    const relativePath = fileUrl.startsWith("/") ? fileUrl.slice(1) : fileUrl;
-    const filePath = path.join(process.cwd(), "public", relativePath);
-    await unlink(filePath);
-  } catch (error) {
-    console.error("Error deleting the old file!!", error);
+    if (!storedPath) return;
+
+    // Nếu lỡ lưu dạng "/api/images/..." thì cắt bỏ prefix để lấy đường dẫn tương đối
+    const cleaned = storedPath
+      .replace(/^\/?api\/images\//, "")
+      .replace(/^\/+/, "");
+
+    const mediaRoot = getMediaRoot();
+    const resolvedPath = path.resolve(mediaRoot, cleaned);
+    const rootWithSep = mediaRoot.endsWith(path.sep)
+      ? mediaRoot
+      : `${mediaRoot}${path.sep}`;
+
+    if (!resolvedPath.startsWith(rootWithSep)) {
+      console.warn("Blocked invalid file delete path:", storedPath);
+      return;
+    }
+
+    await unlink(resolvedPath);
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") {
+      console.error("Error deleting the old file!!", error);
+    }
   }
 }

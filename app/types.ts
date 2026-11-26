@@ -258,3 +258,56 @@ export interface PictureFrameProps {
   setSelectedFiles?: React.Dispatch<React.SetStateAction<File[]>>;
   setProductImagePreviews?: React.Dispatch<React.SetStateAction<string[]>>;
 }
+
+export interface OrderItem {
+  id: string | number;
+  orderCode: string;
+  productName: string;
+  customerName: string;
+  quantity: number;
+  deliveryDate: string;
+  status: string;
+  // Các trường mở rộng từ bảng Products
+  productCode?: string;
+  orderID?: string;
+  customerCode?: string;
+  dateCreate?: string;
+  dateFinished?: string;
+  feedback?: string;
+  image?: string;
+}
+
+export interface OrderFormState {
+  orderCode: string;
+  productName: string;
+  customerName: string;
+  quantity: string;
+  deliveryDate: string;
+  status: string;
+}
+// modal edit product
+export interface ProductEditForm {
+  orderID: string;
+  productCode: string;
+  customerCode: string;
+  productName: string;
+  dateCreate: string;
+  dateFinished: string;
+  feedback: string;
+  images: string[];
+  productStatus: string;
+}
+
+export interface PendingFileItem {
+  id: string;
+  file: File;
+  previewUrl: string;
+}
+export interface EditProductModalProps {
+  isOpen: boolean;
+  productId: string | number | null;
+  initialData?: Record<string, unknown> | null;
+  onClose: () => void;
+  onUpdated?: (updatedProduct?: Record<string, unknown>) => void;
+}
+////////////modal edit product////////////

@@ -4,6 +4,16 @@ import { dbGetByField, dbUpdate, dbInsert } from "@/service/baseService";
 const TABLE_NAME = "SettingGems";
 const ID_FIELD = "ProductID";
 
+function normalizeSettingGemImg(rawImg: unknown): string | null {
+  if (!rawImg) return null;
+
+  const list = Array.isArray(rawImg) ? rawImg : String(rawImg).split(",");
+
+  const cleaned = list.map((item) => String(item).trim()).filter(Boolean);
+
+  return cleaned.length > 0 ? cleaned.join(",") : null;
+}
+
 // ==================== GET: Lấy dữ liệu SettingGem theo ProductID ====================
 export async function GET(request: NextRequest) {
   try {
@@ -47,7 +57,7 @@ export async function PUT(request: NextRequest) {
       lossWeight,
       filingDustWeight,
       gemLossWeight, // Khớp với state gemLossWeight ở frontend
-      settingIMG, // Khớp với tên file ảnh setting gem
+      settingIMG, // Khớp với dữ liệu ảnh setting gem
     } = body;
 
     if (!productId || isNaN(Number(productId))) {
@@ -57,15 +67,18 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const numericProductId = Number(productId);
     const existing = await dbGetByField(
       TABLE_NAME,
       ID_FIELD,
-      Number(productId),
+      numericProductId,
     );
 
-    // Payload map chuẩn xác 100% với tên cột trong SQL Server của bảng SettingGem
+    const normalizedImg = normalizeSettingGemImg(settingIMG);
+
+    // Payload map chuẩn xác với tên cột trong SQL Server của bảng SettingGems
     const payload = {
-      ProductID: Number(productId),
+      ProductID: numericProductId,
       EmployName: employName || "",
       Time: time ? new Date(time) : new Date(),
       GemWeight: gemWeight == null || gemWeight === "" ? 0 : Number(gemWeight),
@@ -85,11 +98,11 @@ export async function PUT(request: NextRequest) {
         gemLossWeight == null || gemLossWeight === ""
           ? 0
           : Number(gemLossWeight),
-      SettingGemIMG: settingIMG ? settingIMG : null,
+      SettingGemIMG: normalizedImg,
     };
 
     if (existing && existing.length > 0) {
-      await dbUpdate(TABLE_NAME, ID_FIELD, Number(productId), payload);
+      await dbUpdate(TABLE_NAME, ID_FIELD, numericProductId, payload);
     } else {
       await dbInsert(TABLE_NAME, payload);
     }
@@ -97,6 +110,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "SettingGem saved successfully!",
+      settingGemIMG: normalizedImg,
     });
   } catch (error: any) {
     console.error("Error PUT SettingGem API:", error);

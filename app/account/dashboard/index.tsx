@@ -16,6 +16,29 @@ import {
 } from "lucide-react";
 import { AccountFormModal, DeleteConfirmModal } from "@/account/modal";
 
+const DEFAULT_AVATAR =
+  "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150";
+
+function resolveAvatarUrl(rawAvatar?: string | null): string {
+  if (!rawAvatar) return DEFAULT_AVATAR;
+
+  const value = rawAvatar.trim();
+  if (!value || value.startsWith("blob:")) {
+    return DEFAULT_AVATAR;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  const trimmed = value.replace(/^\/+/, "");
+  if (trimmed.startsWith("api/images")) {
+    return `/${trimmed}`;
+  }
+
+  return `/api/images?path=${encodeURIComponent(trimmed)}`;
+}
+
 export default function AdminDashboard() {
   const [accounts, setAccounts] = useState<UserAcc[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -48,7 +71,7 @@ export default function AdminDashboard() {
       const result = await response.json();
 
       if (result.success && Array.isArray(result.data)) {
-        // Map từ PascalCase (SQL: UserID, Name, Email,...) sang camelCase (UI)
+        // Map từ API sang state UI
         const mappedData = result.data.map((item: any) => ({
           id: item.userID,
           avatar: item.avatar,
@@ -76,7 +99,8 @@ export default function AdminDashboard() {
   const toggleShowPassword = (id: string) => {
     setShowPasswordMap((prev) => ({ ...prev, [id]: !prev[id] }));
   };
-  //Modal Add
+
+  // Modal Add
   const handleOpenAddModal = () => {
     setEditingAccount(null);
     setSelectedFile(null);
@@ -90,7 +114,8 @@ export default function AdminDashboard() {
     });
     setIsFormModalOpen(true);
   };
-  //Modal Edit
+
+  // Modal Edit
   const handleOpenEditModal = (account: UserAcc) => {
     setEditingAccount(account);
     setSelectedFile(null);
@@ -104,7 +129,8 @@ export default function AdminDashboard() {
     });
     setIsFormModalOpen(true);
   };
-  //Modal Delete
+
+  // Modal Delete
   const handleOpenDeleteModal = (account: UserAcc) => {
     setDeletingAccount(account);
     setIsDeleteModalOpen(true);
@@ -117,7 +143,7 @@ export default function AdminDashboard() {
     try {
       let avatarUrl = formData.avatar;
 
-      // Nếu người dùng chọn file ảnh mới, upload lên thư mục public/uploads trước
+      // Nếu người dùng chọn file ảnh mới, upload lên server trước
       if (selectedFile) {
         const uploadDataForm = new FormData();
         uploadDataForm.append("file", selectedFile);
@@ -129,7 +155,7 @@ export default function AdminDashboard() {
         const uploadResult = await uploadRes.json();
 
         if (uploadResult.success) {
-          avatarUrl = uploadResult.url;
+          avatarUrl = uploadResult.path || uploadResult.url || avatarUrl;
         } else {
           alert("Error upload image!!: " + uploadResult.error);
           return;
@@ -142,9 +168,7 @@ export default function AdminDashboard() {
         Email: formData.email,
         Password: formData.password,
         Role: formData.role || "User",
-        Avatar:
-          avatarUrl ||
-          "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+        Avatar: avatarUrl || DEFAULT_AVATAR,
       };
 
       // Tự động phân chia URL và Method dựa vào việc đang Sửa hay Thêm mới
@@ -199,7 +223,7 @@ export default function AdminDashboard() {
     }
   };
 
-  //4. loc-tim kiêm
+  // 4. LỌC - TÌM KIẾM
   const filteredAccounts = accounts.filter(
     (acc) =>
       acc.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -285,15 +309,7 @@ export default function AdminDashboard() {
                     <td className="py-3 px-4">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
-                        src={(() => {
-                          const avatarPath = account.avatar;
-                          if (!avatarPath || avatarPath.startsWith("blob:")) {
-                            return "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150";
-                          }
-                          return avatarPath.startsWith("/")
-                            ? avatarPath
-                            : `/${avatarPath}`;
-                        })()}
+                        src={resolveAvatarUrl(account.avatar)}
                         alt={account.name}
                         className="w-9 h-9 rounded-full object-cover border border-amber-300 shadow-2xs"
                       />

@@ -1,3 +1,34 @@
+function normalizeMediaPath(raw: unknown): string {
+  if (!raw) return "";
+  const parts = Array.isArray(raw) ? raw : String(raw).split(",");
+
+  return parts
+    .map((entry) => {
+      let val = String(entry ?? "").trim();
+      if (!val || val === "null" || val === "undefined") return "";
+
+      const queryIdx = val.indexOf("?path=");
+      if (queryIdx !== -1) {
+        val = val.slice(queryIdx + 6);
+      } else {
+        const cleaned = val.replace(/^\/+/, "");
+        if (cleaned.startsWith("api/images/")) {
+          val = cleaned.slice("api/images/".length);
+        } else if (cleaned.startsWith("images/")) {
+          val = cleaned.slice("images/".length);
+        }
+      }
+
+      try {
+        return decodeURIComponent(val).trim();
+      } catch {
+        return val.trim();
+      }
+    })
+    .filter(Boolean)
+    .join(",");
+}
+
 // 1. Cập nhật 3D Design Progress
 export async function updateProcessing(pID: number, progressData: any) {
   // Đảm bảo dữ liệu đầu vào luôn là một mảng an toàn
@@ -5,17 +36,44 @@ export async function updateProcessing(pID: number, progressData: any) {
     ? progressData
     : [progressData].filter(Boolean);
 
+  const mappedItems = dsprogressArray.map((item: any) => {
+    const renderImg = normalizeMediaPath(item?.renderIMG ?? item?.RenderIMG);
+    const gemPosition = normalizeMediaPath(
+      item?.gemPosition ?? item?.GemPosition ?? item?.GemPositon,
+    );
+    const processImage = normalizeMediaPath(
+      item?.designIMG ??
+        item?.DesignIMG ??
+        item?.processImage ??
+        item?.ProcessImage ??
+        item?.image,
+    );
+
+    return {
+      processingID: item?.processingID || item?.id || 0,
+      designer: item?.designer || "",
+      completedAt: item?.completedAt || "",
+      processImage,
+      ProcessImage: processImage,
+      designIMG: processImage,
+      DesignIMG: processImage,
+      renderIMG: renderImg,
+      RenderIMG: renderImg,
+      gemPosition,
+      GemPosition: gemPosition,
+      GemPositon: gemPosition,
+    };
+  });
+
+  const firstItem = mappedItems[0] || {};
+
   const res = await fetch(`/api/DsProcess?productID=${pID}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       productID: pID,
-      items: dsprogressArray.map((item: any) => ({
-        processingID: item?.processingID || item?.id || 0,
-        designer: item?.designer || "",
-        completedAt: item?.completedAt || "",
-        processImage: item?.image || "", // 🌟 Bổ sung truyền luôn chuỗi ảnh mới upload vào đây nếu backend cần
-      })),
+      ...firstItem,
+      items: mappedItems,
     }),
   });
 
@@ -24,6 +82,7 @@ export async function updateProcessing(pID: number, progressData: any) {
     throw new Error(data.error || "Error saving 3D Processing");
   return data;
 }
+
 // ==================== Cập nhật Material (Dạng Object phẳng thuần túy) ====================
 export async function updateMaterial(
   pID: number,
@@ -59,6 +118,7 @@ export async function updateMaterial(
   if (!data.success) throw new Error(data.error || "Error saving Material");
   return data;
 }
+
 // 3. Cập nhật Gemstone
 export async function updateGemstone(pID: number, gemstones: any[]) {
   const gemstonesArray = Array.isArray(gemstones) ? gemstones : [gemstones];
@@ -84,6 +144,7 @@ export async function updateGemstone(pID: number, gemstones: any[]) {
   if (!data.success) throw new Error(data.error || "Error saving Gemstones");
   return data;
 }
+
 // 4. Cập nhật Grillz Details
 export async function updateGrillz(
   pID: number,
@@ -96,7 +157,7 @@ export async function updateGrillz(
       productID: pID,
       quality: grilldetails.quality,
       styleName: grilldetails.styleName,
-      grillzImage: grilldetails.grillzImage,
+      grillzImage: normalizeMediaPath(grilldetails.grillzImage),
     }),
   });
   const data = await res.json();

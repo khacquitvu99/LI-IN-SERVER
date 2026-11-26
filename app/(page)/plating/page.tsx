@@ -11,6 +11,81 @@ import Notification from "@/components/notification";
 
 import { Image, FlaskConical, Download, Upload } from "lucide-react";
 
+function buildMediaImageUrl(rawPath?: string | null): string {
+  if (!rawPath) return "";
+
+  const value = rawPath.trim();
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value) || value.startsWith("blob:")) {
+    return value;
+  }
+
+  const queryIndex = value.indexOf("?path=");
+  if (queryIndex !== -1) {
+    const existingPath = value.slice(queryIndex + 6);
+    if (!existingPath) return "";
+
+    let decoded = existingPath;
+    if (/%[0-9A-Fa-f]{2}/.test(existingPath)) {
+      try {
+        decoded = decodeURIComponent(existingPath);
+      } catch {
+        decoded = existingPath;
+      }
+    }
+    return `/api/images?path=${encodeURIComponent(decoded)}`;
+  }
+
+  const trimmed = value.replace(/^\/+/, "");
+  if (trimmed.startsWith("api/images/")) {
+    const subPath = trimmed.slice("api/images/".length);
+    let decoded = subPath;
+    if (/%[0-9A-Fa-f]{2}/.test(subPath)) {
+      try {
+        decoded = decodeURIComponent(subPath);
+      } catch {
+        decoded = subPath;
+      }
+    }
+    return `/api/images?path=${encodeURIComponent(decoded)}`;
+  }
+
+  let normalizedPath = trimmed;
+  if (/%[0-9A-Fa-f]{2}/.test(trimmed)) {
+    try {
+      normalizedPath = decodeURIComponent(trimmed);
+    } catch {
+      normalizedPath = trimmed;
+    }
+  }
+
+  return `/api/images?path=${encodeURIComponent(normalizedPath)}`;
+}
+
+function extractStoredMediaPath(uploadResult: any): string | null {
+  if (uploadResult?.path && typeof uploadResult.path === "string") {
+    return uploadResult.path.trim().replace(/^\/+/, "");
+  }
+
+  if (uploadResult?.url && typeof uploadResult.url === "string") {
+    const urlStr = uploadResult.url.trim();
+    const qIdx = urlStr.indexOf("?path=");
+    if (qIdx !== -1) {
+      const rawParam = urlStr.slice(qIdx + 6);
+      try {
+        return decodeURIComponent(rawParam).replace(/^\/+/, "");
+      } catch {
+        return rawParam.replace(/^\/+/, "");
+      }
+    }
+    const parts = urlStr.split("/");
+    return parts[parts.length - 1] || null;
+  }
+
+  return null;
+}
+
 export default function PlatinggPage() {
   // 1. STATE QUẢN LÝ DỮ LIỆU CHUNG CHO BẢNG PLATING
   const [platingData, setPlatingData] = useState({
@@ -28,16 +103,16 @@ export default function PlatinggPage() {
 
   // Xử lý khi chọn file ảnh mới từ máy
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFiles((prev) => [...prev, file]);
-      // Tạo URL tạm để hiển thị preview ngay lập tức trên giao diện
-      const imageUrl = URL.createObjectURL(file);
-      setProductImagePreviews((prev) => [...prev, imageUrl]);
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length > 0) {
+      setSelectedFiles((prev) => [...prev, ...files]);
+      const newImageUrls = files.map((file) => URL.createObjectURL(file));
+      setProductImagePreviews((prev) => [...prev, ...newImageUrls]);
     }
+    e.target.value = "";
   };
 
-  // 3. HÀM XÓA ẢNH (Xóa file trên ổ D và reset state ảnh)
+  // 3. HÀM XÓA ẢNH (Xóa file vật lý, cập nhật DB và reset state ảnh)
   const handleRemoveImage = async (index: number) => {
     try {
       const existingImages = platingData.platingIMG
@@ -47,15 +122,18 @@ export default function PlatinggPage() {
             .filter(Boolean)
         : [];
 
-      // Nếu bấm xóa ảnh cũ đã lưu trên DB / Ổ D
+      // Nếu bấm xóa ảnh cũ đã lưu trên DB / media storage
       if (index < existingImages.length) {
         const rawImgToDelete = existingImages[index];
 
-        // 1. Gọi API xóa file vật lý trên ổ D
+        // 1. Gọi API xóa file vật lý
         const deleteRes = await fetch("/api/deleteImage", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: rawImgToDelete }),
+          body: JSON.stringify({
+            path: rawImgToDelete,
+            filename: rawImgToDelete,
+          }),
         });
         const deleteResult = await deleteRes.json();
 
@@ -96,6 +174,11 @@ export default function PlatinggPage() {
       } else {
         // Nếu xóa ảnh mới chọn tạm (chưa bấm Save)
         const fileIndex = index - existingImages.length;
+        const previewToRevoke = productImagePreviews[fileIndex];
+        if (previewToRevoke?.startsWith("blob:")) {
+          URL.revokeObjectURL(previewToRevoke);
+        }
+
         setSelectedFiles((prev) => prev.filter((_, i) => i !== fileIndex));
         setProductImagePreviews((prev) =>
           prev.filter((_, i) => i !== fileIndex),
@@ -115,21 +198,21 @@ export default function PlatinggPage() {
         return;
       }
 
-      // ⏱️ Lấy thời gian thực tại đúng khoảnh khắc click nút Save
       const realTimeTimestamp = new Date().toISOString();
 
-      let uploadedImageNames: string[] = platingData.platingIMG
+      let uploadedImagePaths: string[] = platingData.platingIMG
         ? platingData.platingIMG
             .split(",")
             .map((img) => img.trim())
             .filter(Boolean)
         : [];
 
-      // Upload các file ảnh mới chọn
+      // Upload các file ảnh mới chọn vào thư mục con "products"
       if (selectedFiles.length > 0) {
         for (const file of selectedFiles) {
           const uploadFormData = new FormData();
           uploadFormData.append("file", file);
+          uploadFormData.append("folder", "products");
 
           const uploadRes = await fetch("/api/uploadImage", {
             method: "POST",
@@ -137,10 +220,12 @@ export default function PlatinggPage() {
           });
 
           const uploadResult = await uploadRes.json();
-          if (uploadResult.success && uploadResult.url) {
-            const urlParts = uploadResult.url.split("/");
-            const fileName = urlParts[urlParts.length - 1];
-            uploadedImageNames.push(fileName);
+          const storedPath = uploadResult.success
+            ? extractStoredMediaPath(uploadResult)
+            : null;
+
+          if (uploadResult.success && storedPath) {
+            uploadedImagePaths.push(storedPath);
           } else {
             alert("Error uploading image: " + uploadResult.error);
             return;
@@ -148,22 +233,20 @@ export default function PlatinggPage() {
         }
       }
 
-      // Dùng Set lọc trùng lặp tên file tuyệt đối
-      const finalPlatingImg = Array.from(new Set(uploadedImageNames)).join(",");
+      const finalPlatingImg = Array.from(new Set(uploadedImagePaths)).join(",");
 
       const payload = {
         ...platingData,
         platingIMG: finalPlatingImg,
-        productStatus: 10, // 👈 Gắn trực tiếp giá trị số thứ tự 8 (Completed/Plating) vào payload
+        productStatus: 10,
       };
 
       const response = await fetch("/api/plating", {
-        method: "PUT", // Cơ chế Upsert
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      // 🛡️ Kiểm tra nếu API trả về lỗi
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server error (${response.status}): ${errorText}`);
@@ -172,19 +255,16 @@ export default function PlatinggPage() {
       const result = await response.json();
 
       if (result.success) {
-        // Cập nhật trạng thái sản phẩm sang bước kế tiếp / hoàn thành và ghi log real-time
         try {
-          // 1. Cập nhật status vào bảng Products
           await fetch("/api/product", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               productID: platingData.productId,
-              productStatus: 10, //
+              productStatus: 10,
             }),
           });
 
-          // 2. Gửi log real-time lên WorkflowLogs
           await fetch("/api/WorkflowLogs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -199,7 +279,11 @@ export default function PlatinggPage() {
 
         alert("Save Plating Successfully!");
 
-        // Cập nhật state chuẩn từ server và dọn sạch mảng tạm chống nhân đôi ảnh
+        productImagePreviews.forEach((url) => {
+          if (url.startsWith("blob:")) {
+            URL.revokeObjectURL(url);
+          }
+        });
         setPlatingData((prev) => ({ ...prev, platingIMG: finalPlatingImg }));
         setSelectedFiles([]);
         setProductImagePreviews([]);
@@ -212,7 +296,7 @@ export default function PlatinggPage() {
     }
   };
 
-  // Tổng hợp danh sách ảnh hiển thị
+  // Tổng hợp danh sách ảnh hiển thị qua /api/images?path=...
   const existingImages = platingData.platingIMG
     ? platingData.platingIMG
         .split(",")
@@ -221,11 +305,10 @@ export default function PlatinggPage() {
     : [];
 
   const rawImagesToShow = [
-    ...existingImages.map((img) => `/api/images/${img}`),
+    ...existingImages.map((img) => buildMediaImageUrl(img)),
     ...productImagePreviews,
-  ];
+  ].filter(Boolean);
 
-  // 🔥 Lọc trùng lặp tuyệt đối bằng Set
   const allImagesToShow = Array.from(new Set(rawImagesToShow));
 
   return (
@@ -323,6 +406,7 @@ export default function PlatinggPage() {
                       <input
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         onChange={handleImageChange}
                       />
@@ -337,7 +421,7 @@ export default function PlatinggPage() {
             <div className="flex justify-end mt-6 pt-4 border-t border-gray-200">
               <button
                 type="button"
-                onClick={handleSaveProcess} // Gắn hàm xử lý Upsert và Upload ảnh vào đây
+                onClick={handleSaveProcess}
                 className="inline-flex items-center gap-1.5 sm:gap-2 px-3.5 sm:px-6 py-1.5 sm:py-2.5 mb-6 sm:mb-20 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-xs sm:text-sm font-semibold rounded-lg shadow-sm transition-all duration-200 focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer"
               >
                 <Download className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0" />

@@ -99,7 +99,7 @@ export default function LiveStatusScroll({
                 key={item.id}
                 className={`flex items-center justify-between gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1.5 sm:py-2 transition-all rounded-lg text-xs my-0.5 ${
                   isLatest
-                    ? "bg-amber-50/90 border border-amber-300 shadow-2xs font-semibold"
+                    ? "bg-green-50/90 border border-green-300 font-semibold"
                     : "hover:bg-amber-50/40"
                 }`}
               >

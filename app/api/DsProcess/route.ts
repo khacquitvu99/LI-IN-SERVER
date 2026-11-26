@@ -4,6 +4,17 @@ import { dbGetAll, dbInsert, dbUpdate } from "@/service/baseService";
 const TABLE_NAME = "DsProcessing"; // Tên bảng trong cơ sở dữ liệu SQL Server
 const ID_FIELD = "ProcessingID"; // Khóa chính của bảng
 
+function normalizeFieldList(raw: any): string {
+  if (!raw) return "";
+  if (Array.isArray(raw)) {
+    return raw
+      .map((s) => String(s ?? "").trim())
+      .filter(Boolean)
+      .join(",");
+  }
+  return String(raw).trim();
+}
+
 // ==================== GET: Lấy danh sách tiến độ theo productID ====================
 export async function GET(request: NextRequest) {
   try {
@@ -28,20 +39,36 @@ export async function GET(request: NextRequest) {
     );
 
     // Chuẩn hóa dữ liệu trả về cho frontend
-    const formattedData = filteredRecords.map((record: any) => ({
-      processingID:
-        record.processingID || record.ProcessingID || record.id || 0,
-      productID: Number(productId),
-      designer: record.designer || record.Designer || "",
-      completedAt: record.completedAt || record.CompletedAt || "",
-      // 🌟 Hứng chuẩn xác từ cột ProcessImage trong DB SQL Server
-      image:
+    const formattedData = filteredRecords.map((record: any) => {
+      const renderImg =
+        record.RenderIMG || record.renderIMG || record.renderImg || "";
+      const gemPosition =
+        record.GemPosition ||
+        record.gemPosition ||
+        record.GemPositon ||
+        record.gemPositon ||
+        "";
+      const processImage =
         record.ProcessImage ||
         record.processImage ||
+        record.DesignIMG ||
+        record.designIMG ||
         record.image ||
         record.productImage ||
-        "",
-    }));
+        "";
+
+      return {
+        processingID:
+          record.processingID || record.ProcessingID || record.id || 0,
+        productID: Number(productId),
+        designer: record.designer || record.Designer || "",
+        completedAt: record.completedAt || record.CompletedAt || "",
+        image: processImage,
+        processImage,
+        renderIMG: renderImg,
+        gemPosition,
+      };
+    });
 
     return NextResponse.json({
       success: true,
@@ -57,7 +84,7 @@ export async function GET(request: NextRequest) {
 }
 
 // ===== PUT/POST: Thêm hoặc Cập nhật tiến độ 3D (Hỗ trợ lưu Image)
-export async function PUT(request: NextRequest) {
+async function handleSaveProcessing(request: NextRequest) {
   try {
     const body = await request.json();
     const { productID, productId, items, dsprogress } = body;
@@ -87,21 +114,41 @@ export async function PUT(request: NextRequest) {
     for (const item of listToProcess) {
       if (!item) continue;
 
-      // 🌟 Nếu item hoàn toàn trống (không có designer, không có ngày, không có ảnh) thì bỏ qua không xử lý
       const rawImage =
-        item.image !== undefined ? item.image : item.processImage;
-      if (!item.designer && !item.completedAt && !rawImage) {
+        item.processImage !== undefined
+          ? item.processImage
+          : item.image !== undefined
+            ? item.image
+            : item.designIMG !== undefined
+              ? item.designIMG
+              : item.DesignIMG;
+
+      const rawRender =
+        item.renderIMG !== undefined ? item.renderIMG : item.RenderIMG;
+
+      const rawGemPos =
+        item.gemPosition !== undefined
+          ? item.gemPosition
+          : item.GemPosition !== undefined
+            ? item.GemPosition
+            : item.GemPositon;
+
+      // 🌟 Nếu item hoàn toàn trống thì bỏ qua không xử lý
+      if (
+        !item.designer &&
+        !item.completedAt &&
+        !rawImage &&
+        !rawRender &&
+        !rawGemPos
+      ) {
         continue;
       }
 
       const procID = item.processingID || item.ProcessingID || item.id;
 
-      let imageValue = "";
-      if (Array.isArray(rawImage)) {
-        imageValue = rawImage.join(",");
-      } else if (typeof rawImage === "string") {
-        imageValue = rawImage;
-      }
+      const imageValue = normalizeFieldList(rawImage);
+      const renderValue = normalizeFieldList(rawRender);
+      const gemPositionValue = normalizeFieldList(rawGemPos);
 
       const dataPayload: any = {
         ProductID: Number(pID),
@@ -111,6 +158,8 @@ export async function PUT(request: NextRequest) {
             ? new Date(item.completedAt || item.CompletedAt)
             : null,
         ProcessImage: imageValue,
+        RenderIMG: renderValue,
+        GemPosition: gemPositionValue,
       };
 
       let targetProcID = procID;
@@ -142,10 +191,18 @@ export async function PUT(request: NextRequest) {
       message: "DsProcessing and Images saved successfully!",
     });
   } catch (error: any) {
-    console.error("❌ Error PUT DsProcess API:", error);
+    console.error("❌ Error saving DsProcess API:", error);
     return NextResponse.json(
       { success: false, error: error.message },
       { status: 500 },
     );
   }
+}
+
+export async function PUT(request: NextRequest) {
+  return handleSaveProcessing(request);
+}
+
+export async function POST(request: NextRequest) {
+  return handleSaveProcessing(request);
 }

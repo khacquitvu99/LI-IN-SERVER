@@ -1,6 +1,6 @@
 "use client";
 
-import React, {
+import {
   useState,
   ChangeEvent,
   useEffect,
@@ -26,11 +26,48 @@ const PRODUCTION_COST_FIELDS: { key: keyof CostData; label: string }[] = [
   { key: "cpsxSp", label: "Product manufacturing" },
 ];
 
+// Chỉ cộng các trường chi phí, không cộng ngược lại trường `price`
+const COST_SUM_KEYS: (keyof CostData)[] = [
+  ...LABOR_FIELDS.map((f) => f.key),
+  ...PRODUCTION_COST_FIELDS.map((f) => f.key),
+];
+
+const INITIAL_COSTS: CostData = {
+  design3d: 0,
+  printing3d: 0,
+  casting: 0,
+  sanding: 0,
+  settinggem: 0,
+  polishing: 0,
+  plating: 0,
+  cpsxChung: 0,
+  cpsxSp: 0,
+  price: 0,
+};
+
+function sanitizeNumber(val: unknown, fallback = 0): number {
+  if (typeof val === "number") {
+    return Number.isFinite(val) && val >= 0 ? val : fallback;
+  }
+  if (typeof val === "string") {
+    const cleaned = val.replace(/[^0-9.-]/g, "").trim();
+    if (!cleaned) return fallback;
+    const num = Number(cleaned);
+    return Number.isFinite(num) && num >= 0 ? num : fallback;
+  }
+  return fallback;
+}
+
+function roundDecimal(val: number, decimals = 4): number {
+  if (!Number.isFinite(val)) return 0;
+  const factor = Math.pow(10, decimals);
+  return Math.round(val * factor) / factor;
+}
+
 interface ProductionCostFormProps {
   productId: number | null;
 }
 
-// Định nghĩa ref handle để component cha gọi hàm saveData()
 export interface ProductionCostFormHandle {
   saveData: () => Promise<void>;
 }
@@ -39,84 +76,106 @@ const ProductionCostForm = forwardRef<
   ProductionCostFormHandle,
   ProductionCostFormProps
 >(({ productId }, ref) => {
-  const [costs, setCosts] = useState<CostData>({
-    design3d: 0,
-    printing3d: 0,
-    casting: 0,
-    sanding: 0,
-    settinggem: 0,
-    polishing: 0,
-    plating: 0,
-    cpsxChung: 0,
-    cpsxSp: 0,
-    price: 0,
-  });
+  const [costs, setCosts] = useState<CostData>(INITIAL_COSTS);
+  const [loading, setLoading] = useState<boolean>(false);
 
-  const [loading, setLoading] = useState(false);
-
-  // Lấy dữ liệu được truyền từ store Zustand
   const { selectedProduct } = useDesignStore();
-
   const sideStones = selectedProduct?.sideStones || [];
   const centerStones = selectedProduct?.centerStones || [];
 
-  // 1. Tự động Fetch dữ liệu từ API GET khi productId thay đổi
+  // 1. Tự động fetch dữ liệu từ API GET khi productId thay đổi
   useEffect(() => {
-    if (!productId) return;
+    if (!productId) {
+      setCosts(INITIAL_COSTS);
+      return;
+    }
+
+    let cancelled = false;
 
     async function fetchCostData() {
       try {
         setLoading(true);
-        const res = await fetch(`/api/productCost?productID=${productId}`);
+        const res = await fetch(
+          `/api/productCost?productID=${encodeURIComponent(String(productId))}`,
+          { cache: "no-store" },
+        );
         const result = await res.json();
 
+        if (cancelled) return;
+
         if (result.success && result.data) {
-          // Map dữ liệu từ DB (đã camelizeKeys) vào state form
           setCosts({
-            design3d: result.data.design3D ?? 0,
-            printing3d: result.data.printing3D ?? 0,
-            casting: result.data.casting ?? 0,
-            sanding: result.data.sanding ?? 0,
-            settinggem: result.data.settingGem ?? 0,
-            polishing: result.data.polishing ?? 0,
-            plating: result.data.plating ?? 0,
-            cpsxChung: result.data.cpsxChung ?? 0,
-            cpsxSp: result.data.cpsxSp ?? 0,
-            price: result.data.price ?? 0,
+            design3d: sanitizeNumber(
+              result.data.design3D ?? result.data.design3d,
+              0,
+            ),
+            printing3d: sanitizeNumber(
+              result.data.printing3D ?? result.data.printing3d,
+              0,
+            ),
+            casting: sanitizeNumber(result.data.casting, 0),
+            sanding: sanitizeNumber(result.data.sanding, 0),
+            settinggem: sanitizeNumber(
+              result.data.settingGem ?? result.data.settinggem,
+              0,
+            ),
+            polishing: sanitizeNumber(result.data.polishing, 0),
+            plating: sanitizeNumber(result.data.plating, 0),
+            cpsxChung: sanitizeNumber(result.data.cpsxChung, 0),
+            cpsxSp: sanitizeNumber(result.data.cpsxSp, 0),
+            price: sanitizeNumber(result.data.price, 0),
           });
         } else {
-          // BỔ SUNG: Reset form về 0 ngay khi sản phẩm chưa có dữ liệu cost
-          setCosts({
-            design3d: 0,
-            printing3d: 0,
-            casting: 0,
-            sanding: 0,
-            settinggem: 0,
-            polishing: 0,
-            plating: 0,
-            cpsxChung: 0,
-            cpsxSp: 0,
-            price: 0,
-          });
+          setCosts(INITIAL_COSTS);
         }
       } catch (error) {
         console.error("Error fetching product cost:", error);
+        if (!cancelled) {
+          setCosts(INITIAL_COSTS);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     }
 
     fetchCostData();
+
+    return () => {
+      cancelled = true;
+    };
   }, [productId]);
+
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setCosts((prev) => ({
       ...prev,
-      [name]: parseFloat(value) || 0,
+      [name]: sanitizeNumber(value, 0),
     }));
   };
 
-  // 2. Expose hàm saveData ra ngoài qua ref để nút Save ở Footer gọi
+  // Tính toán tổng chi phí
+  const totalProcessCost = roundDecimal(
+    COST_SUM_KEYS.reduce((acc, key) => acc + sanitizeNumber(costs[key], 0), 0),
+  );
+  const totalSideCost = roundDecimal(
+    sideStones.reduce(
+      (acc: number, item: any) => acc + sanitizeNumber(item?.cost, 0),
+      0,
+    ),
+  );
+  const totalCenterCost = roundDecimal(
+    centerStones.reduce(
+      (acc: number, item: any) => acc + sanitizeNumber(item?.cost, 0),
+      0,
+    ),
+  );
+  const grandTotalCost = roundDecimal(
+    totalSideCost + totalCenterCost + totalProcessCost,
+  );
+
+  // 2. Expose hàm saveData ra ngoài qua ref cho nút Save ở Footer
   useImperativeHandle(ref, () => ({
     async saveData() {
       if (!productId) {
@@ -124,73 +183,49 @@ const ProductionCostForm = forwardRef<
         return;
       }
 
-      // Tính tổng grandTotalCost để lưu vào trường price (hoặc tùy chỉnh theo DB của Qui)
-      const totalProcessCost = Object.values(costs).reduce(
-        (acc, curr) => acc + curr,
-        0,
-      );
-      const totalSideCost = sideStones.reduce(
-        (acc: number, item: any) => acc + Number(item.cost || 0),
-        0,
-      );
-      const totalCenterCost = centerStones.reduce(
-        (acc: number, item: any) => acc + Number(item.cost || 0),
-        0,
-      );
-      const grandTotalCost = totalSideCost + totalCenterCost + totalProcessCost;
+      const payload = {
+        productId: Number(productId),
+        productID: Number(productId),
+        design3D: sanitizeNumber(costs.design3d, 0),
+        printing3D: sanitizeNumber(costs.printing3d, 0),
+        casting: sanitizeNumber(costs.casting, 0),
+        sanding: sanitizeNumber(costs.sanding, 0),
+        settingGem: sanitizeNumber(costs.settinggem, 0),
+        polishing: sanitizeNumber(costs.polishing, 0),
+        plating: sanitizeNumber(costs.plating, 0),
+        cpsxChung: sanitizeNumber(costs.cpsxChung, 0),
+        cpsxSp: sanitizeNumber(costs.cpsxSp, 0),
+        price: grandTotalCost,
+      };
 
       const res = await fetch("/api/productCost", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productId: productId,
-          design3D: costs.design3d,
-          printing3D: costs.printing3d,
-          casting: costs.casting,
-          sanding: costs.sanding,
-          settingGem: costs.settinggem,
-          polishing: costs.polishing,
-          plating: costs.plating,
-          cpsxChung: costs.cpsxChung,
-          cpsxSp: costs.cpsxSp,
-          price: grandTotalCost, // Lưu tổng chi phí vào Price
-        }),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
-      if (result.success) {
+      if (res.ok && result.success) {
+        setCosts((prev) => ({ ...prev, price: grandTotalCost }));
         alert("Product cost saved successfully!");
       } else {
-        alert(`Failed to save: ${result.message}`);
+        alert(
+          `Failed to save: ${result.message || result.error || "Unknown error"}`,
+        );
       }
     },
   }));
 
-  // Tính toán tổng hiển thị trên giao diện
-  const totalProcessCost = Object.values(costs).reduce(
-    (acc, curr) => acc + curr,
-    0,
-  );
-  const totalSideCost = sideStones.reduce(
-    (acc: number, item: any) => acc + Number(item.cost || 0),
-    0,
-  );
-  const totalCenterCost = centerStones.reduce(
-    (acc: number, item: any) => acc + Number(item.cost || 0),
-    0,
-  );
-  const grandTotalCost = totalSideCost + totalCenterCost + totalProcessCost;
-
   if (loading) {
     return (
-      <div className="p-6 text-center text-gray-500 bg-white rounded-xl">
+      <div className="p-6 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
         Loading cost data...
       </div>
     );
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6 space-y-6">
       {/* HEADER */}
       <div className="flex items-center gap-2.5 border-b border-amber-200/60 pb-3">
         <div className="w-1.5 h-6 bg-amber-500 rounded-full" />
@@ -201,22 +236,23 @@ const ProductionCostForm = forwardRef<
       </div>
 
       <div className="space-y-6">
-        {/* 1. BẢNG LABOR / PROCESS COST */}
+        {/* 1. BẢNG PROCESS COST */}
         <div className="border border-gray-300 rounded-xl overflow-hidden shadow-2xs">
-          <div className="bg-amber-50/50 text-amber-950 font-bold text-center py-2 uppercase tracking-wider text-md border-b border-gray-300">
+          <div className="bg-amber-50/50 text-amber-950 font-bold text-center py-2 uppercase tracking-wider text-sm sm:text-base border-b border-gray-300">
             Process Cost
           </div>
           <table className="w-full border-collapse text-xs">
             <tbody className="divide-y divide-gray-200">
               {LABOR_FIELDS.map(({ key, label }) => (
                 <tr key={key}>
-                  <td className="w-1/3 p-2.5 font-semibold text-sm text-gray-700 bg-slate-50/50 border-r border-gray-200">
+                  <td className="w-1/3 p-2.5 font-semibold text-xs sm:text-sm text-gray-700 bg-slate-50/50 border-r border-gray-200">
                     {label}
                   </td>
                   <td className="p-1.5">
                     <input
                       type="number"
                       min="0"
+                      step="any"
                       name={key}
                       onKeyDown={(e) => {
                         if (e.key === "-" || e.key === "+" || e.key === "e") {
@@ -224,19 +260,7 @@ const ProductionCostForm = forwardRef<
                         }
                       }}
                       value={costs[key] || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "") {
-                          handleChange({
-                            target: { name: key, value: "" },
-                          } as any);
-                          return;
-                        }
-                        const numVal = Math.max(0, Number(val) || 0);
-                        handleChange({
-                          target: { name: key, value: String(numVal) },
-                        } as any);
-                      }}
+                      onChange={handleChange}
                       placeholder="0"
                       className="w-full px-2.5 py-1.5 rounded-lg focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 outline-none text-right font-mono font-medium text-gray-900"
                     />
@@ -247,22 +271,23 @@ const ProductionCostForm = forwardRef<
           </table>
         </div>
 
-        {/* 2. BẢNG CHI PHÍ SX */}
+        {/* 2. BẢNG MANUFACTURING COSTS */}
         <div className="border border-gray-300 rounded-xl overflow-hidden shadow-2xs">
-          <div className="bg-amber-50/50 text-amber-950 font-bold text-center py-2 text-md uppercase tracking-wider border-b border-gray-300">
+          <div className="bg-amber-50/50 text-amber-950 font-bold text-center py-2 text-sm sm:text-base uppercase tracking-wider border-b border-gray-300">
             Manufacturing costs
           </div>
           <table className="w-full border-collapse text-xs">
             <tbody className="divide-y divide-gray-200">
               {PRODUCTION_COST_FIELDS.map(({ key, label }) => (
                 <tr key={key}>
-                  <td className="w-1/3 p-2.5 font-semibold text-sm text-gray-700 bg-slate-50/50 border-r border-gray-200">
+                  <td className="w-1/3 p-2.5 font-semibold text-xs sm:text-sm text-gray-700 bg-slate-50/50 border-r border-gray-200">
                     {label}
                   </td>
                   <td className="p-1.5">
                     <input
                       type="number"
                       min="0"
+                      step="any"
                       name={key}
                       onKeyDown={(e) => {
                         if (e.key === "-" || e.key === "+" || e.key === "e") {
@@ -270,19 +295,7 @@ const ProductionCostForm = forwardRef<
                         }
                       }}
                       value={costs[key] || ""}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val === "") {
-                          handleChange({
-                            target: { name: key, value: "" },
-                          } as any);
-                          return;
-                        }
-                        const numVal = Math.max(0, Number(val) || 0);
-                        handleChange({
-                          target: { name: key, value: String(numVal) },
-                        } as any);
-                      }}
+                      onChange={handleChange}
                       placeholder="0"
                       className="w-full px-2.5 py-1.5 rounded-lg focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 outline-none text-right font-mono font-medium text-gray-900"
                     />

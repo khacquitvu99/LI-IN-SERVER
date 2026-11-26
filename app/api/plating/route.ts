@@ -4,6 +4,15 @@ import { dbGetByField, dbUpdate, dbInsert } from "@/service/baseService";
 const TABLE_NAME = "Plating";
 const ID_FIELD = "ProductID";
 
+function normalizePlatingImg(rawImg: unknown): string {
+  if (!rawImg) return "";
+
+  const list = Array.isArray(rawImg) ? rawImg : String(rawImg).split(",");
+  const cleaned = list.map((item) => String(item).trim()).filter(Boolean);
+
+  return cleaned.length > 0 ? cleaned.join(",") : "";
+}
+
 // ============= GET: Lấy dữ liệu Plating theo ProductID =================
 export async function GET(request: NextRequest) {
   try {
@@ -46,21 +55,20 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const existing = await dbGetByField(
-      TABLE_NAME,
-      ID_FIELD,
-      Number(productId),
-    );
+    const numericProductId = Number(productId);
+    const existing = await dbGetByField(TABLE_NAME, ID_FIELD, numericProductId);
+
+    const normalizedImg = normalizePlatingImg(platingIMG);
 
     const payload = {
-      ProductID: Number(productId),
+      ProductID: numericProductId,
       EmployName: employName || "",
       Time: time ? new Date(time) : new Date(),
-      PlatingIMG: platingIMG || "",
+      PlatingIMG: normalizedImg,
     };
 
     if (existing && existing.length > 0) {
-      await dbUpdate(TABLE_NAME, ID_FIELD, Number(productId), payload);
+      await dbUpdate(TABLE_NAME, ID_FIELD, numericProductId, payload);
     } else {
       await dbInsert(TABLE_NAME, payload);
     }
@@ -68,6 +76,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: "Plating saved successfully!",
+      platingIMG: normalizedImg,
     });
   } catch (error: any) {
     console.error("Error PUT Plating API:", error);

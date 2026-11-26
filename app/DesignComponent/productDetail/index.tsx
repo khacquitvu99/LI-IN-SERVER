@@ -14,13 +14,27 @@ import {
 } from "@/service/handleFunction";
 import { Package } from "lucide-react";
 
+export type ParentCategory = "product" | "grillz";
+
+interface ProductDetailsContentProps {
+  productId: number;
+  productData: any;
+  parentCategory?: ParentCategory;
+}
+
+function splitImageList(raw?: any): string[] {
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : String(raw).split(",");
+  return arr
+    .map((s) => String(s).trim())
+    .filter((s) => s && s !== "null" && s !== "undefined");
+}
+
 export default function ProductDetailsContent({
   productId,
   productData,
-}: {
-  productId: number;
-  productData: any;
-}) {
+  parentCategory = "product",
+}: ProductDetailsContentProps) {
   const [subTab, setSubTab] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -28,7 +42,14 @@ export default function ProductDetailsContent({
     designer: "",
     completedAt: "",
     processImage: "",
+    renderIMG: "",
+    gemPosition: "",
+    designIMG: "",
   });
+  const [renderImages, setRenderImages] = useState<string[]>([]);
+  const [gemPositionImages, setGemPositionImages] = useState<string[]>([]);
+  const [designProcessImages, setDesignProcessImages] = useState<string[]>([]);
+
   const [Materials, setMaterials] = useState<any>({
     materiatype: "",
     color: "",
@@ -43,7 +64,6 @@ export default function ProductDetailsContent({
   });
   const [Gemstones, setGemstones] = useState<any[]>([]);
 
-  // 🌟 Dùng useRef để theo dõi form nào đã thực sự bị thay đổi (dirty)
   const isDirtyRef = useRef({
     processing: false,
     material: false,
@@ -62,22 +82,13 @@ export default function ProductDetailsContent({
   const rawImageString = productData?.image;
   const productOriginalImages: string[] =
     typeof rawImageString === "string"
-      ? rawImageString
-          .split(",")
-          .map((s: string) => s.trim())
-          .filter(Boolean)
+      ? splitImageList(rawImageString)
       : Array.isArray(rawImageString)
         ? rawImageString
         : [];
 
-  const processingImageString = Processing?.processImage || "";
-  const productProcessImages: string[] =
-    typeof processingImageString === "string"
-      ? processingImageString
-          .split(",")
-          .map((s: string) => s.trim())
-          .filter((s: string) => s && s !== "null" && s !== "undefined")
-      : [];
+  const is3DExportTab = subTab === 1;
+  const activeLeftImages = is3DExportTab ? gemPositionImages : renderImages;
 
   useEffect(() => {
     if (productId) {
@@ -87,7 +98,6 @@ export default function ProductDetailsContent({
 
   const loadTabData = async (id: number) => {
     try {
-      // Khi load dữ liệu mới theo sản phẩm, reset lại trạng thái dirty
       isDirtyRef.current = {
         processing: false,
         material: false,
@@ -102,11 +112,34 @@ export default function ProductDetailsContent({
         data3DProcess.DsProcessing?.[0] ||
         data3DProcess;
 
+      const loadedRender = splitImageList(
+        loadedProcess?.renderIMG || loadedProcess?.RenderIMG,
+      );
+      const loadedGemPos = splitImageList(
+        loadedProcess?.gemPosition ||
+          loadedProcess?.GemPosition ||
+          loadedProcess?.GemPositon,
+      );
+      const loadedDesignImg = splitImageList(
+        loadedProcess?.designIMG ||
+          loadedProcess?.DesignIMG ||
+          loadedProcess?.processImage ||
+          loadedProcess?.ProcessImage ||
+          loadedProcess?.image,
+      );
+
+      setRenderImages(loadedRender);
+      setGemPositionImages(loadedGemPos);
+      setDesignProcessImages(loadedDesignImg);
+
       setProcessing({
         designer: loadedProcess?.designer || "",
         completedAt: loadedProcess?.completedAt || "",
-        processImage: loadedProcess?.processImage || loadedProcess?.image || "",
-        image: loadedProcess?.processImage || loadedProcess?.image || "",
+        processImage: loadedDesignImg.join(","),
+        renderIMG: loadedRender.join(","),
+        gemPosition: loadedGemPos.join(","),
+        designIMG: loadedDesignImg.join(","),
+        image: loadedDesignImg.join(","),
       });
 
       const resMaterial = await fetch(`/api/material?productID=${id}`);
@@ -125,67 +158,111 @@ export default function ProductDetailsContent({
     }
   };
 
-  const handleUploadSuccess = (fileUrl: string) => {
-    const fileName = fileUrl.split("/").pop() || fileUrl;
-    setProcessing((prev: any) => {
-      const existingImg = prev.image || prev.processImage || "";
-      const currentImages = existingImg
-        ? existingImg
-            .split(",")
-            .map((s: string) => s.trim())
-            .filter(Boolean)
-        : [];
-      if (!currentImages.includes(fileName)) {
-        currentImages.push(fileName);
-      }
-      const combinedImageString = currentImages.join(",");
-      isDirtyRef.current.processing = true; // Đánh dấu form processing thay đổi khi upload ảnh
-      return {
-        ...prev,
-        image: combinedImageString,
-        processImage: combinedImageString,
-      };
+  const handleUploadSuccess = (
+    fileUrl: string,
+    meta?: { isGemPositionTab?: boolean; dbField?: string },
+    relativePath?: string,
+  ) => {
+    const mediaValue = relativePath || fileUrl;
+    const isGemPos = Boolean(
+      meta?.isGemPositionTab || meta?.dbField === "GemPosition" || subTab === 1,
+    );
+
+    isDirtyRef.current.processing = true;
+
+    if (isGemPos) {
+      setGemPositionImages((prev) => {
+        const next = prev.includes(mediaValue) ? prev : [...prev, mediaValue];
+        setProcessing((p: any) => ({ ...p, gemPosition: next.join(",") }));
+        return next;
+      });
+    } else {
+      setRenderImages((prev) => {
+        const next = prev.includes(mediaValue) ? prev : [...prev, mediaValue];
+        setProcessing((p: any) => ({ ...p, renderIMG: next.join(",") }));
+        return next;
+      });
+    }
+  };
+
+  const handleDesignUploadSuccess = (
+    fileUrl: string,
+    _meta?: any,
+    relativePath?: string,
+  ) => {
+    const mediaValue = relativePath || fileUrl;
+    isDirtyRef.current.processing = true;
+
+    setDesignProcessImages((prev) => {
+      const next = prev.includes(mediaValue) ? prev : [...prev, mediaValue];
+      const joined = next.join(",");
+      setProcessing((p: any) => ({
+        ...p,
+        designIMG: joined,
+        processImage: joined,
+        image: joined,
+      }));
+      return next;
     });
   };
 
-  const handleRemoveExistingImage = async (imageNameToRemove: string) => {
+  const handleRemoveExistingImage = async (
+    imageNameToRemove: string,
+    meta?: { section?: string; isGemPositionTab?: boolean },
+  ) => {
     if (!confirm(`Are you sure you want to delete ${imageNameToRemove}??`))
       return;
-    try {
-      await fetch("/api/deleteImage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: imageNameToRemove }),
-      });
-    } catch (err) {
-      console.warn("File missing on server");
-    }
 
-    const currentImages = productProcessImages.filter(
-      (img) => img !== imageNameToRemove,
-    );
-    const newImageString =
-      currentImages.length > 0 ? currentImages.join(",") : "";
-    const updatedProcessData = {
-      ...Processing,
-      image: newImageString,
-      processImage: newImageString,
-    };
+    const isDesignSection = meta?.section === "design";
+    const isGemPosSection =
+      meta?.section === "gem_position" || Boolean(meta?.isGemPositionTab);
 
-    setProcessing(updatedProcessData);
     isDirtyRef.current.processing = true;
-    if (productId) {
-      await updateProcessing(productId, updatedProcessData);
+
+    let nextProcessing = { ...Processing };
+
+    if (isDesignSection) {
+      const nextList = designProcessImages.filter(
+        (img) => img !== imageNameToRemove,
+      );
+      const joined = nextList.join(",");
+      setDesignProcessImages(nextList);
+      nextProcessing = {
+        ...nextProcessing,
+        designIMG: joined,
+        processImage: joined,
+        image: joined,
+      };
+    } else if (isGemPosSection) {
+      const nextList = gemPositionImages.filter(
+        (img) => img !== imageNameToRemove,
+      );
+      setGemPositionImages(nextList);
+      nextProcessing = {
+        ...nextProcessing,
+        gemPosition: nextList.join(","),
+      };
+    } else {
+      const nextList = renderImages.filter((img) => img !== imageNameToRemove);
+      setRenderImages(nextList);
+      nextProcessing = {
+        ...nextProcessing,
+        renderIMG: nextList.join(","),
+      };
     }
-    alert("Cleaned up successfully!");
+
+    setProcessing(nextProcessing);
+    if (productId) {
+      await updateProcessing(productId, nextProcessing);
+    }
   };
 
-  // 🌟 Hàm Save thông minh: Chỉ gọi API update cho form nào có thay đổi (dirty)
   const saveAllProductData = async (
     targetStatus: number,
     successMessage: string,
   ) => {
-    if (!productId) {
+    const numericId = Number(productId);
+    if (!productId || Number.isNaN(numericId) || numericId <= 0) {
       alert("Please select a product before saving!");
       return;
     }
@@ -193,31 +270,30 @@ export default function ProductDetailsContent({
       setIsSaving(true);
       const realTimeTimestamp = new Date().toISOString();
 
-      let hasUpdatedAnyComponent = false;
+      const mergedProcessingPayload = {
+        ...Processing,
+        renderIMG: renderImages.join(","),
+        gemPosition: gemPositionImages.join(","),
+        designIMG: designProcessImages.join(","),
+        processImage: designProcessImages.join(","),
+      };
 
-      // 1. Chỉ update Processing nếu form này có thay đổi
       if (isDirtyRef.current.processing) {
-        await updateProcessing(productId, Processing);
-        hasUpdatedAnyComponent = true;
+        await updateProcessing(numericId, mergedProcessingPayload);
       }
 
-      // 2. Chỉ update Material nếu form này có thay đổi
       if (isDirtyRef.current.material && typeof updateMaterial === "function") {
-        await updateMaterial(productId, Materials);
-        hasUpdatedAnyComponent = true;
+        await updateMaterial(numericId, Materials);
       }
 
-      // 3. Chỉ update Gemstones nếu form này có thay đổi
       if (isDirtyRef.current.gemstone && typeof updateGemstone === "function") {
-        await updateGemstone(productId, Gemstones);
-        hasUpdatedAnyComponent = true;
+        await updateGemstone(numericId, Gemstones);
       }
-      // 4. Chỉ update GemCenter khi có thay đổi VÀ dữ liệu không bị rỗng/chưa có thông tin
+
       if (
         isDirtyRef.current.gemCenter &&
         typeof updateGemCenter === "function"
       ) {
-        // Kiểm tra nếu GemCenter có tồn tại và có ít nhất một trường dữ liệu (shape, type, size...) được điền
         const hasGemCenterData =
           GemCenter &&
           (GemCenter.shape ||
@@ -227,16 +303,15 @@ export default function ProductDetailsContent({
             GemCenter.id);
 
         if (hasGemCenterData) {
-          await updateGemCenter(productId, GemCenter);
+          await updateGemCenter(numericId, GemCenter);
         }
       }
 
-      // 5. Luôn cập nhật trạng thái sản phẩm và ghi log khi bấm Save
       await fetch("/api/product", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productID: productId,
+          productID: numericId,
           productStatus: targetStatus,
         }),
       });
@@ -244,10 +319,13 @@ export default function ProductDetailsContent({
       await fetch("/api/WorkflowLogs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, timestamp: realTimeTimestamp }),
+        body: JSON.stringify({
+          productId: numericId,
+          timestamp: realTimeTimestamp,
+        }),
       });
 
-      // Reset lại cờ dirty sau khi lưu thành công
+      setProcessing(mergedProcessingPayload);
       isDirtyRef.current = {
         processing: false,
         material: false,
@@ -283,7 +361,6 @@ export default function ProductDetailsContent({
 
       {/* Tabs */}
       <div className="flex items-center gap-2 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
-        {/* Design */}
         <button
           type="button"
           onClick={() => setSubTab(0)}
@@ -296,7 +373,6 @@ export default function ProductDetailsContent({
           Design
         </button>
 
-        {/* 3D Export */}
         <button
           type="button"
           onClick={() => setSubTab(1)}
@@ -310,11 +386,10 @@ export default function ProductDetailsContent({
         </button>
       </div>
 
-      {/* Nội dung các component con kèm cơ chế ghi nhận thay đổi (Dirty check) */}
       <div className="space-y-6 pt-2">
         <DsProcessing
           onDataChange={(data) => {
-            setProcessing(data);
+            setProcessing((prev: any) => ({ ...prev, ...data }));
             isDirtyRef.current.processing = true;
           }}
         />
@@ -342,8 +417,12 @@ export default function ProductDetailsContent({
           />
         </div>
         <PictureFrame
+          parentCategory={parentCategory}
+          activeParentTab={parentCategory}
+          activeTab={subTab === 0 ? "DESIGN" : "3D EXPORT"}
           productOriginalImages={productOriginalImages}
-          productProcessImages={productProcessImages}
+          productProcessImages={activeLeftImages}
+          designImages={designProcessImages}
           productImagePreviews={productImagePreviews}
           selectedPreviewImage={selectedPreviewImage}
           setSelectedPreviewImage={setSelectedPreviewImage}
@@ -351,9 +430,9 @@ export default function ProductDetailsContent({
           setProductImagePreviews={setProductImagePreviews}
           onRemoveExistingImage={handleRemoveExistingImage}
           onUploadSuccess={handleUploadSuccess}
+          onDesignUploadSuccess={handleDesignUploadSuccess}
         />
 
-        {/* Nút Save */}
         <div className="flex items-center justify-end gap-3 pt-4 border-t border-gray-100">
           {subTab === 0 ? (
             <button

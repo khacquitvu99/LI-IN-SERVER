@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Nav from "@/components/navigation";
 import Fillter from "@/components/fillter";
 import Meterials from "@/DesignComponent/material";
-import Footer from "@/components/footerButton";
+import Footer from "@/components/order-list/footerButton";
 import ListOrder from "@/components/order-list";
 import Laboratory, {
   ProductionCostFormHandle,
@@ -25,64 +25,59 @@ export default function CoutingPage() {
 
   // 2. Hàm xử lý khi bấm nút Save ở Footer
   const handleSaveAll = async () => {
-    if (labFormRef.current) {
-      try {
-        setIsSaving(true);
-
-        // 1. Lưu form Laboratory trước
-        await labFormRef.current.saveData();
-
-        const targetId = productId;
-
-        if (targetId) {
-          const realTimeTimestamp = new Date().toISOString();
-
-          // 2.1. Cập nhật Status = 3 trong bảng Products
-          const updateRes = await fetch(`/api/product`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              productId: Number(targetId),
-              productStatus: 3,
-            }),
-          });
-
-          const updateResult = await updateRes.json();
-          if (!updateRes.ok || !updateResult.success) {
-            throw new Error(
-              updateResult.message || "Failed to update product status!",
-            );
-          }
-
-          // 2.2. Gửi log real-time lên WorkflowLogs
-          const logRes = await fetch("/api/WorkflowLogs", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              productId: Number(targetId),
-              timestamp: realTimeTimestamp,
-            }),
-          });
-
-          const logResult = await logRes.json();
-          if (!logRes.ok || !logResult.success) {
-            throw new Error(
-              logResult.message || "Failed to record workflow log!",
-            );
-          }
-
-          alert("Save lab data, update status 3 & record log successfully!!");
-        } else {
-          alert("⚠️ Laboratory saved, nhưng chưa xác định được ID sản phẩm!");
-        }
-      } catch (error: any) {
-        console.error("❌ Error:", error);
-        alert("Error saving: " + error.message);
-      } finally {
-        setIsSaving(false);
-      }
-    } else {
+    if (!labFormRef.current) {
       alert("Form reference not found!");
+      return;
+    }
+
+    try {
+      setIsSaving(true);
+
+      // 1. Lưu form Laboratory trước
+      await labFormRef.current.saveData();
+
+      if (!productId) {
+        alert("⚠️ Laboratory saved, Product ID has not yet been identified");
+        return;
+      }
+
+      const numericProductId = Number(productId);
+      const timestamp = new Date().toISOString();
+
+      // 2.1. Cập nhật Status = 3 trong bảng Products
+      const updateRes = await fetch("/api/product", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: numericProductId,
+          productStatus: 3,
+        }),
+      });
+      const updateResult = await updateRes.json();
+      if (!updateRes.ok || !updateResult.success) {
+        throw new Error(
+          updateResult.message || "Failed to update product status!",
+        );
+      }
+
+      // 2.2. Gửi log real-time lên WorkflowLogs
+      const logRes = await fetch("/api/WorkflowLogs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: numericProductId,
+          timestamp,
+        }),
+      });
+      const logResult = await logRes.json();
+      if (!logRes.ok || !logResult.success) {
+        throw new Error(logResult.message || "Failed to record workflow log!");
+      }
+    } catch (error: any) {
+      console.error("❌ Error:", error);
+      alert("Error saving: " + error.message);
+    } finally {
+      setIsSaving(false);
     }
   };
   return (
@@ -100,9 +95,8 @@ export default function CoutingPage() {
           {/* CỘT TRÁI: DANH SÁCH ĐƠN HÀNG */}
           <div className="lg:col-span-4">
             <ListOrder />
-
             {/* CÁC NÚT BẤM THAO TÁC (LƯU - CẬP NHẬT - IN) */}
-            <div className="mt-10 pr-8 pt-2 border-t border-gray-300">
+            <div className="mt-10 border-t border-gray-300">
               {/* Truyền hàm handleSaveAll xuống Footer qua props onSave */}
               <Footer onSave={handleSaveAll} />
             </div>

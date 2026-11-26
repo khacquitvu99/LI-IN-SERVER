@@ -14,7 +14,6 @@ export function deleteFile(imagePath: string | null | undefined): void {
     // Lấy tên file gốc ra từ URL
     const fileName = path.basename(imagePath);
     const absolutePath = path.join(EXTERNAL_UPLOAD_DIR, fileName);
-
     if (fs.existsSync(absolutePath)) {
       fs.unlinkSync(absolutePath);
       console.log(`[File Deleted]: ${absolutePath}`);

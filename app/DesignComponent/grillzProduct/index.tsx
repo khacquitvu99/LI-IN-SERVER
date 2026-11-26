@@ -8,14 +8,29 @@ import GrillzStyle from "@/DesignComponent/grillz";
 import PictureFrame from "@/DesignComponent/pictureFrame";
 import { updateGrillz } from "@/service/handleFunction";
 import { Package } from "lucide-react";
+import type { GrillzStyleItem } from "@/types";
+
+export type ParentCategory = "product" | "grillz";
+
+interface GrillzContentProps {
+  productId: number;
+  productData: any;
+  parentCategory?: ParentCategory;
+}
+
+function splitImageList(raw?: any): string[] {
+  if (!raw) return [];
+  const arr = Array.isArray(raw) ? raw : String(raw).split(",");
+  return arr
+    .map((s) => String(s).trim())
+    .filter((s) => s && s !== "null" && s !== "undefined");
+}
 
 export default function GrillzContent({
   productId,
   productData,
-}: {
-  productId: number;
-  productData: any;
-}) {
+  parentCategory = "grillz",
+}: GrillzContentProps) {
   // Quản lý tab bên trong: 0 = Design, 1 = 3D Export
   const [subTab, setSubTab] = useState<number>(0);
   const [isSaving, setIsSaving] = useState(false);
@@ -24,7 +39,14 @@ export default function GrillzContent({
     designer: "",
     completedAt: "",
     processImage: "",
+    renderIMG: "",
+    gemPosition: "",
+    designIMG: "",
   });
+  const [renderImages, setRenderImages] = useState<string[]>([]);
+  const [gemPositionImages, setGemPositionImages] = useState<string[]>([]);
+  const [designProcessImages, setDesignProcessImages] = useState<string[]>([]);
+
   const [Materials, setMaterials] = useState<any>({
     materiatype: "",
     color: "",
@@ -36,6 +58,7 @@ export default function GrillzContent({
     styleName: "",
     grillzImage: "",
   });
+  const [grillzStyleList, setGrillzStyleList] = useState<GrillzStyleItem[]>([]);
   const [Gemstones, setGemstones] = useState<any[]>([]);
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
@@ -49,10 +72,7 @@ export default function GrillzContent({
   const rawImageString = productData?.image;
   const productOriginalImages: string[] =
     typeof rawImageString === "string"
-      ? rawImageString
-          .split(",")
-          .map((s: string) => s.trim())
-          .filter(Boolean)
+      ? splitImageList(rawImageString)
       : Array.isArray(rawImageString)
         ? rawImageString
         : [];
@@ -61,12 +81,10 @@ export default function GrillzContent({
     ? Grillzdetails.grillz[0]
     : Grillzdetails;
   const grillzImageString = targetGrillObj?.grillzImage || "";
-  const grillzProcessImages: string[] = grillzImageString
-    ? grillzImageString
-        .split(",")
-        .map((s: string) => s.trim())
-        .filter((s: string) => s && s !== "null" && s !== "undefined")
-    : [];
+  const grillzProcessImages: string[] = splitImageList(grillzImageString);
+
+  const is3DExportTab = subTab === 1;
+  const activeLeftImages = is3DExportTab ? gemPositionImages : renderImages;
 
   useEffect(() => {
     if (productId) {
@@ -84,34 +102,97 @@ export default function GrillzContent({
     }
   };
 
-  const handleUploadSuccess = (fileUrl: string) => {
-    const fileName = fileUrl.split("/").pop() || fileUrl;
+  const handleUploadSuccess = (
+    fileUrl: string,
+    meta?: { isGemPositionTab?: boolean; dbField?: string },
+    relativePath?: string,
+  ) => {
+    const mediaValue = relativePath || fileUrl;
+    const fileName = mediaValue.split("/").pop() || mediaValue;
+    const isGemPos = Boolean(
+      meta?.isGemPositionTab || meta?.dbField === "GemPosition" || subTab === 1,
+    );
+
+    if (isGemPos) {
+      setGemPositionImages((prev) => {
+        const next = prev.includes(mediaValue) ? prev : [...prev, mediaValue];
+        setProcessing((p: any) => ({ ...p, gemPosition: next.join(",") }));
+        return next;
+      });
+    } else {
+      setRenderImages((prev) => {
+        const next = prev.includes(mediaValue) ? prev : [...prev, mediaValue];
+        setProcessing((p: any) => ({ ...p, renderIMG: next.join(",") }));
+        return next;
+      });
+    }
+
     setGrillzdetails((prev: any) => {
-      const currentImages = prev.grillzImage
-        ? prev.grillzImage
-            .split(",")
-            .map((s: string) => s.trim())
-            .filter(Boolean)
-        : [];
+      const baseObj = Array.isArray(prev?.grillz)
+        ? prev.grillz[0] || prev
+        : prev || {};
+      const currentImages = splitImageList(baseObj.grillzImage);
       if (!currentImages.includes(fileName)) {
         currentImages.push(fileName);
       }
-      return { ...prev, grillzImage: currentImages.join(",") };
+      return { ...baseObj, grillzImage: currentImages.join(",") };
     });
   };
 
-  const handleRemoveExistingImage = async (imageNameToRemove: string) => {
+  const handleDesignUploadSuccess = (
+    fileUrl: string,
+    _meta?: any,
+    relativePath?: string,
+  ) => {
+    const mediaValue = relativePath || fileUrl;
+    setDesignProcessImages((prev) => {
+      const next = prev.includes(mediaValue) ? prev : [...prev, mediaValue];
+      const joined = next.join(",");
+      setProcessing((p: any) => ({
+        ...p,
+        designIMG: joined,
+        processImage: joined,
+      }));
+      return next;
+    });
+  };
+
+  const handleRemoveExistingImage = async (
+    imageNameToRemove: string,
+    meta?: { section?: string; isGemPositionTab?: boolean },
+  ) => {
     if (!confirm(`Are you sure you want to delete ${imageNameToRemove}?`))
       return;
-    try {
-      await fetch("/api/deleteImage", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: imageNameToRemove }),
-      });
-    } catch (err) {
-      console.warn("File missing on server");
+
+    const isDesignSection = meta?.section === "design";
+    const isGemPosSection =
+      meta?.section === "gem_position" || Boolean(meta?.isGemPositionTab);
+
+    if (isDesignSection) {
+      const nextDesign = designProcessImages.filter(
+        (img) => img !== imageNameToRemove,
+      );
+      setDesignProcessImages(nextDesign);
+      setProcessing((p: any) => ({
+        ...p,
+        designIMG: nextDesign.join(","),
+        processImage: nextDesign.join(","),
+      }));
+      return;
     }
+
+    if (isGemPosSection) {
+      const nextGem = gemPositionImages.filter(
+        (img) => img !== imageNameToRemove,
+      );
+      setGemPositionImages(nextGem);
+      setProcessing((p: any) => ({ ...p, gemPosition: nextGem.join(",") }));
+      return;
+    }
+
+    const nextRender = renderImages.filter((img) => img !== imageNameToRemove);
+    setRenderImages(nextRender);
+    setProcessing((p: any) => ({ ...p, renderIMG: nextRender.join(",") }));
 
     const currentImages = grillzProcessImages.filter(
       (img) => img !== imageNameToRemove,
@@ -122,93 +203,106 @@ export default function GrillzContent({
 
     setGrillzdetails(updatedGrillData);
     if (productId) {
+      const firstStyle = grillzStyleList[0];
       await updateGrillz(productId, {
-        quality: updatedGrillData.quantity || updatedGrillData.quality,
-        styleName: updatedGrillData.styleName,
+        quality:
+          firstStyle?.quantity ??
+          updatedGrillData.quantity ??
+          updatedGrillData.quality,
+        styleName: firstStyle?.styleName ?? updatedGrillData.styleName,
         grillzImage: newImageString,
       });
     }
-    alert("Cleaned up successfully!");
+  };
+
+  const saveGrillTab = async (
+    targetStatus: number,
+    successMessage: string,
+    missingIdMessage: string,
+  ) => {
+    const numericId = Number(productId);
+    if (!productId || Number.isNaN(numericId) || numericId <= 0) {
+      alert(missingIdMessage);
+      return;
+    }
+    try {
+      setIsSaving(true);
+      const realTimeTimestamp = new Date().toISOString();
+      const firstStyle = grillzStyleList[0];
+
+      const mergedProcessing = {
+        ...Processing,
+        productID: numericId,
+        renderIMG: renderImages.join(","),
+        gemPosition: gemPositionImages.join(","),
+        designIMG: designProcessImages.join(","),
+        processImage: designProcessImages.join(","),
+      };
+
+      await updateGrillz(numericId, {
+        quality:
+          firstStyle?.quantity ??
+          Grillzdetails.quantity ??
+          Grillzdetails.quality,
+        styleName: firstStyle?.styleName ?? Grillzdetails.styleName,
+        grillzImage: Grillzdetails.grillzImage,
+      });
+
+      // Lưu ảnh & thông tin xử lý vào DsProcessing (nếu route /api/DsProcess hỗ trợ POST/PUT)
+      await fetch("/api/DsProcess", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(mergedProcessing),
+      });
+
+      await fetch("/api/product", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productID: numericId,
+          productStatus: targetStatus,
+        }),
+      });
+
+      await fetch("/api/WorkflowLogs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productId: numericId,
+          timestamp: realTimeTimestamp,
+        }),
+      });
+
+      setProcessing(mergedProcessing);
+      alert(successMessage);
+    } catch (error: any) {
+      alert(`Save failed: ${error.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Hàm Save cho tab Design (Grillz)
-  const handleSaveGrillDesign = async () => {
-    if (!productId) {
-      alert("Please select a product before saving Grill Design!");
-      return;
-    }
-    try {
-      setIsSaving(true);
-      const realTimeTimestamp = new Date().toISOString();
-
-      await updateGrillz(productId, {
-        quality: Grillzdetails.quantity || Grillzdetails.quality,
-        styleName: Grillzdetails.styleName,
-        grillzImage: Grillzdetails.grillzImage,
-      });
-
-      await fetch("/api/product", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productID: productId, productStatus: 2 }),
-      });
-
-      await fetch("/api/WorkflowLogs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, timestamp: realTimeTimestamp }),
-      });
-
-      alert("Save Grill Design Successfully..!!");
-    } catch (error: any) {
-      alert(`Save failed: ${error.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const handleSaveGrillDesign = () =>
+    saveGrillTab(
+      2,
+      "Save Grill Design Successfully..!!",
+      "Please select a product before saving Grill Design!",
+    );
 
   // Hàm Save cho tab 3D Export (Grillz)
-  const handleSaveGrill3DExport = async () => {
-    if (!productId) {
-      alert("Please select a product before saving Grill 3D Export!");
-      return;
-    }
-    try {
-      setIsSaving(true);
-      const realTimeTimestamp = new Date().toISOString();
-
-      await updateGrillz(productId, {
-        quality: Grillzdetails.quantity || Grillzdetails.quality,
-        styleName: Grillzdetails.styleName,
-        grillzImage: Grillzdetails.grillzImage,
-      });
-
-      await fetch("/api/product", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productID: productId, productStatus: 3 }),
-      });
-
-      await fetch("/api/WorkflowLogs", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, timestamp: realTimeTimestamp }),
-      });
-
-      alert("Save Grill 3D Export Successfully..!!");
-    } catch (error: any) {
-      alert(`Save failed: ${error.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
+  const handleSaveGrill3DExport = () =>
+    saveGrillTab(
+      3,
+      "Save Grill 3D Export Successfully..!!",
+      "Please select a product before saving Grill 3D Export!",
+    );
 
   return (
     <div className="space-y-6">
       <div className="space-y-3 pt-2">
         <div className="flex items-center gap-2 text-amber-700 font-bold text-sm uppercase tracking-wider">
-          {/* Icon lớp (Layers icon tương tự như mẫu Material Details) */}
-          <Package className="h-6 w-6"/>
+          <Package className="h-6 w-6" />
           <span>Grillz Process</span>
         </div>
         <div className="border-b border-amber-200/60 pb-2"></div>
@@ -243,14 +337,24 @@ export default function GrillzContent({
 
       {/* NỘI DUNG CHUNG CHO CẢ 2 TAB */}
       <div className="space-y-6 pt-2">
-        <DsProcessing onDataChange={(data) => setProcessing(data)} />
+        <DsProcessing
+          onDataChange={(data) =>
+            setProcessing((prev: any) => ({ ...prev, ...data }))
+          }
+        />
         <Material onDataChange={(data) => setMaterials(data)} />
         <GemStone onDataChange={(data) => setGemstones(data)} />
-        <GrillzStyle onDataChange={(data) => setGrillzdetails(data)} />
+        <GrillzStyle onDataChange={(data) => setGrillzStyleList(data)} />
         <PictureFrame
           isGrill={true}
+          parentCategory={parentCategory}
+          activeParentTab={parentCategory}
+          activeTab={subTab === 0 ? "DESIGN" : "3D EXPORT"}
           productOriginalImages={productOriginalImages}
-          grillzProcessImages={grillzProcessImages}
+          grillzProcessImages={
+            activeLeftImages.length > 0 ? activeLeftImages : grillzProcessImages
+          }
+          designImages={designProcessImages}
           productImagePreviews={productImagePreviews}
           selectedPreviewImage={selectedPreviewImage}
           setSelectedPreviewImage={setSelectedPreviewImage}
@@ -258,6 +362,7 @@ export default function GrillzContent({
           setProductImagePreviews={setProductImagePreviews}
           onRemoveExistingImage={handleRemoveExistingImage}
           onUploadSuccess={handleUploadSuccess}
+          onDesignUploadSuccess={handleDesignUploadSuccess}
         />
 
         {/* NÚT SAVE THAY ĐỔI THEO TAB ĐANG CHỌN */}

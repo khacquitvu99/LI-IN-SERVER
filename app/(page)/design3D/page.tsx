@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 
 import Nav from "@/components/navigation";
 import MenuLeft from "@/components/menuleft";
@@ -12,7 +12,16 @@ import Notification from "@/components/notification";
 import ProductDetailsContent from "@/DesignComponent/productDetail";
 import GrillzContent from "@/DesignComponent/grillzProduct";
 
-export default function DesignPage() {
+// Nếu tách ra file riêng (ví dụ "@/types/design"), bạn có thể export lại từ đó để tránh circular import
+export type ParentCategory = "product" | "grillz";
+
+interface ProductData {
+  id?: number;
+  name?: string;
+  [key: string]: unknown;
+}
+
+function DesignPageContent() {
   // activeTab: null = hiển thị 4 nút lựa chọn lớn, 0 = Order Product, 1 = Grillz, 2 = Watch, 3 = Glasses
   const [activeTab, setActiveTab] = useState<number | null>(null);
   const router = useRouter();
@@ -21,21 +30,26 @@ export default function DesignPage() {
   const productIdFromUrl = searchParams.get("productId");
 
   const [pID, setPID] = useState<number>(0);
-  const [productData, setProductData] = useState<any>(null);
+  const [productData, setProductData] = useState<ProductData | null>(null);
 
   useEffect(() => {
-    if (productIdFromUrl) {
-      const id = Number(productIdFromUrl);
-      setPID(id);
-      loadProductData(id);
-    }
+    if (!productIdFromUrl) return;
+
+    const id = Number(productIdFromUrl);
+    if (Number.isNaN(id)) return;
+
+    setPID(id);
+    void loadProductData(id);
   }, [productIdFromUrl]);
 
   const loadProductData = async (productId: number) => {
     try {
       const resProduct = await fetch(`/api/product?productID=${productId}`);
+      if (!resProduct.ok) {
+        throw new Error(`HTTP error! status: ${resProduct.status}`);
+      }
       const dataProduct = await resProduct.json();
-      setProductData(dataProduct.product);
+      setProductData(dataProduct.product ?? null);
     } catch (error) {
       console.error("Lỗi khi load dữ liệu sản phẩm:", error);
     }
@@ -63,7 +77,6 @@ export default function DesignPage() {
             <Filter />
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
               <OrderList />
-
               <div className="lg:col-span-8 space-y-6 h-auto">
                 <LabelProductName />
 
@@ -152,6 +165,7 @@ export default function DesignPage() {
                           <ProductDetailsContent
                             productId={pID}
                             productData={productData}
+                            parentCategory="product"
                           />
                         )}
 
@@ -159,6 +173,7 @@ export default function DesignPage() {
                           <GrillzContent
                             productId={pID}
                             productData={productData}
+                            parentCategory="grillz"
                           />
                         )}
 
@@ -183,5 +198,15 @@ export default function DesignPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function DesignPage() {
+  return (
+    <Suspense
+      fallback={<div className="p-6 text-sm text-gray-500">Loading...</div>}
+    >
+      <DesignPageContent />
+    </Suspense>
   );
 }

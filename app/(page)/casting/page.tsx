@@ -12,6 +12,81 @@ import Notification from "@/components/notification";
 import { Cpu, Image, Upload, Download } from "lucide-react";
 import { NotificationItem } from "@/types";
 
+function buildMediaImageUrl(rawPath?: string | null): string {
+  if (!rawPath) return "";
+
+  const value = rawPath.trim();
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value) || value.startsWith("blob:")) {
+    return value;
+  }
+
+  const queryIndex = value.indexOf("?path=");
+  if (queryIndex !== -1) {
+    const existingPath = value.slice(queryIndex + 6);
+    if (!existingPath) return "";
+
+    let decoded = existingPath;
+    if (/%[0-9A-Fa-f]{2}/.test(existingPath)) {
+      try {
+        decoded = decodeURIComponent(existingPath);
+      } catch {
+        decoded = existingPath;
+      }
+    }
+    return `/api/images?path=${encodeURIComponent(decoded)}`;
+  }
+
+  const trimmed = value.replace(/^\/+/, "");
+  if (trimmed.startsWith("api/images/")) {
+    const subPath = trimmed.slice("api/images/".length);
+    let decoded = subPath;
+    if (/%[0-9A-Fa-f]{2}/.test(subPath)) {
+      try {
+        decoded = decodeURIComponent(subPath);
+      } catch {
+        decoded = subPath;
+      }
+    }
+    return `/api/images?path=${encodeURIComponent(decoded)}`;
+  }
+
+  let normalizedPath = trimmed;
+  if (/%[0-9A-Fa-f]{2}/.test(trimmed)) {
+    try {
+      normalizedPath = decodeURIComponent(trimmed);
+    } catch {
+      normalizedPath = trimmed;
+    }
+  }
+
+  return `/api/images?path=${encodeURIComponent(normalizedPath)}`;
+}
+
+function extractStoredMediaPath(uploadResult: any): string | null {
+  if (uploadResult?.path && typeof uploadResult.path === "string") {
+    return uploadResult.path.trim().replace(/^\/+/, "");
+  }
+
+  if (uploadResult?.url && typeof uploadResult.url === "string") {
+    const urlStr = uploadResult.url.trim();
+    const qIdx = urlStr.indexOf("?path=");
+    if (qIdx !== -1) {
+      const rawParam = urlStr.slice(qIdx + 6);
+      try {
+        return decodeURIComponent(rawParam).replace(/^\/+/, "");
+      } catch {
+        return rawParam.replace(/^\/+/, "");
+      }
+    }
+    const parts = urlStr.split("/");
+    return parts[parts.length - 1] || null;
+  }
+
+  return null;
+}
+
 export default function CastingPage() {
   // 1. STATE QUẢN LÝ DỮ LIỆU CHUNG CHO BẢNG CASTING
   const [castingData, setCastingData] = useState({
@@ -32,6 +107,7 @@ export default function CastingPage() {
 
   // Khởi tạo state chứa danh sách thông báo
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+
   // Xử lý khi chọn NHIỀU file ảnh mới từ máy
   const handleMultipleImageChange = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -39,10 +115,8 @@ export default function CastingPage() {
     if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
 
-      // Lưu các File object để chuẩn bị gửi lên server
       setSelectedFiles((prev) => [...prev, ...filesArray]);
 
-      // Tạo URL tạm để hiển thị preview ngay lập tức trên giao diện
       const newPreviewUrls = filesArray.map((file) =>
         URL.createObjectURL(file),
       );
@@ -50,22 +124,28 @@ export default function CastingPage() {
     }
   };
 
-  // 3. HÀM XÓA 1 ẢNH (Xóa cả file vật lý trên ổ D, cập nhật lại DB và giao diện)
+  // 3. HÀM XÓA 1 ẢNH (Xóa file vật lý, cập nhật lại DB và giao diện)
   const handleRemoveImage = async (index: number) => {
     try {
       const existingImages = castingData.castingIMG
-        ? castingData.castingIMG.split(",")
+        ? castingData.castingIMG
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
         : [];
 
-      // THƯỜNG TRƯỜNG HỢP 1: Ảnh đang chọn là ảnh cũ (đã lưu sẵn trong DB / ổ D)
+      // TRƯỜNG HỢP 1: Ảnh đang chọn là ảnh cũ (đã lưu sẵn trong DB / media storage)
       if (index < existingImages.length) {
         const imgToDelete = existingImages[index];
 
-        // A. Gọi API xóa file vật lý trên ổ D
+        // A. Gọi API xóa file vật lý
         const deleteRes = await fetch("/api/deleteImage", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: imgToDelete }),
+          body: JSON.stringify({
+            path: imgToDelete,
+            filename: imgToDelete,
+          }),
         });
         const deleteResult = await deleteRes.json();
 
@@ -76,11 +156,11 @@ export default function CastingPage() {
           );
         }
 
-        // B. Cập nhật lại mảng ảnh trong state castingData (bỏ ảnh vừa xóa ra)
+        // B. Cập nhật lại mảng ảnh trong state castingData
         existingImages.splice(index, 1);
         const newCastingIMG = existingImages.join(",");
 
-        // C. Gửi ngay request PUT xuống API Upsert để cập nhật lại cơ sở dữ liệu MSSQL ngay lập tức
+        // C. Gửi ngay request PUT xuống API Upsert để cập nhật DB
         const updatePayload = {
           ...castingData,
           castingIMG: newCastingIMG,
@@ -101,8 +181,13 @@ export default function CastingPage() {
           return;
         }
       } else {
-        // THƯỜNG TRƯỜNG HỢP 2: Ảnh mới chọn nhưng CHƯA bấm nút Save (chỉ đang là preview blob tạm)
+        // TRƯỜNG HỢP 2: Ảnh mới chọn nhưng CHƯA bấm nút Save (preview blob tạm)
         const fileIndex = index - existingImages.length;
+        const previewToRevoke = productImagePreviews[fileIndex];
+        if (previewToRevoke?.startsWith("blob:")) {
+          URL.revokeObjectURL(previewToRevoke);
+        }
+
         setSelectedFiles((prev) => prev.filter((_, i) => i !== fileIndex));
         setProductImagePreviews((prev) =>
           prev.filter((_, i) => i !== fileIndex),
@@ -122,18 +207,21 @@ export default function CastingPage() {
         return;
       }
 
-      // ⏱️ Lấy thời gian thực tại đúng khoảnh khắc click nút Save
       const realTimeTimestamp = new Date().toISOString();
 
-      let uploadedImageNames: string[] = castingData.castingIMG
-        ? castingData.castingIMG.split(",")
+      let uploadedImagePaths: string[] = castingData.castingIMG
+        ? castingData.castingIMG
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean)
         : [];
 
-      // BƯỚC 1: Upload các file ảnh mới (nếu có)
+      // BƯỚC 1: Upload các file ảnh mới vào thư mục con "products"
       if (selectedFiles.length > 0) {
         for (const file of selectedFiles) {
           const uploadFormData = new FormData();
           uploadFormData.append("file", file);
+          uploadFormData.append("folder", "products");
 
           const uploadRes = await fetch("/api/uploadImage", {
             method: "POST",
@@ -141,10 +229,12 @@ export default function CastingPage() {
           });
 
           const uploadResult = await uploadRes.json();
-          if (uploadResult.success && uploadResult.url) {
-            const urlParts = uploadResult.url.split("/");
-            const fileName = urlParts[urlParts.length - 1];
-            uploadedImageNames.push(fileName);
+          const storedPath = uploadResult.success
+            ? extractStoredMediaPath(uploadResult)
+            : null;
+
+          if (uploadResult.success && storedPath) {
+            uploadedImagePaths.push(storedPath);
           } else {
             alert("Error uploading image: " + uploadResult.error);
             return;
@@ -152,7 +242,7 @@ export default function CastingPage() {
         }
       }
 
-      const finalCastingImg = uploadedImageNames.join(",");
+      const finalCastingImg = Array.from(new Set(uploadedImagePaths)).join(",");
 
       // BƯỚC 2: Gửi dữ liệu xuống API lưu Casting (Upsert)
       const payload = {
@@ -168,7 +258,6 @@ export default function CastingPage() {
 
       const result = await response.json();
       if (result.success) {
-        // Cập nhật trạng thái sản phẩm sang bước kế tiếp
         try {
           await fetch("/api/product", {
             method: "PUT",
@@ -186,8 +275,7 @@ export default function CastingPage() {
         return;
       }
 
-      // 🚀 BƯỚC 3: Gửi productId kèm thời gian thực lên API WorkflowLogs
-      // Backend sẽ tự động lấy ProductName, ProductStatus và lưu vào bảng log
+      // BƯỚC 3: Gửi productId kèm thời gian thực lên API WorkflowLogs
       await fetch("/api/WorkflowLogs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -199,7 +287,12 @@ export default function CastingPage() {
 
       alert("Save Successfully");
 
-      // BƯỚC 4: Reset state sạch sẽ, chống nhân đôi ảnh
+      // BƯỚC 4: Giải phóng blob URL & reset state sạch sẽ
+      productImagePreviews.forEach((url) => {
+        if (url.startsWith("blob:")) {
+          URL.revokeObjectURL(url);
+        }
+      });
       setCastingData((prev) => ({ ...prev, castingIMG: finalCastingImg }));
       setSelectedFiles([]);
       setProductImagePreviews([]);
@@ -209,16 +302,19 @@ export default function CastingPage() {
     }
   };
 
-  // Tổng hợp danh sách ảnh hiển thị (Ảnh cũ từ DB + Ảnh preview mới chọn)
+  // Tổng hợp danh sách ảnh hiển thị (Ảnh cũ từ DB qua /api/images?path=... + Ảnh preview mới chọn)
   const existingImages = castingData.castingIMG
-    ? castingData.castingIMG.split(",")
+    ? castingData.castingIMG
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean)
     : [];
-  const rawImagesToShow = [
-    ...existingImages.map((img) => `/api/images/${img}`),
-    ...productImagePreviews,
-  ];
 
-  // 🔥 Dùng Set để lọc bỏ các đường dẫn URL bị trùng lặp, chống nhân đôi ảnh
+  const rawImagesToShow = [
+    ...existingImages.map((img) => buildMediaImageUrl(img)),
+    ...productImagePreviews,
+  ].filter(Boolean);
+
   const allImagesToShow = Array.from(new Set(rawImagesToShow));
 
   return (
@@ -255,7 +351,7 @@ export default function CastingPage() {
                 </h3>
               </div>
 
-              {/* Component form con (Truyền state castingData và hàm cập nhật xuống component con) */}
+              {/* Component form con */}
               <Casting data={castingData} onChange={setCastingData} />
 
               {/* --- PICTURE FRAME & UPLOAD NHIỀU ẢNH --- */}
@@ -316,7 +412,7 @@ export default function CastingPage() {
                       <input
                         type="file"
                         accept="image/*"
-                        multiple // 🔥 Cho phép chọn nhiều ảnh cùng lúc
+                        multiple
                         className="hidden"
                         onChange={handleMultipleImageChange}
                       />
@@ -331,7 +427,7 @@ export default function CastingPage() {
             <div className="flex justify-end mt-6 pt-4 border-t border-gray-200">
               <button
                 type="button"
-                onClick={handleSaveProcess} // Gắn hàm xử lý Upsert và Upload nhiều ảnh vào đây
+                onClick={handleSaveProcess}
                 className="inline-flex items-center gap-2 px-6 py-2.5 mb-20 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-200 focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer"
               >
                 <Download className="h-4 w-4" />

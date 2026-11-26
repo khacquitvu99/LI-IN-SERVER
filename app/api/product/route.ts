@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { dbGetById, dbUpdate } from "@/service/baseService";
 import { connectDB } from "@/lib/db";
-import { deleteFile } from "@/Utilities/deleteFile";
+import { deleteStoredMedia } from "@/lib/media-storage"; // chỉnh đúng path media-storage.ts của dự án
 
 // ==========================================
 // HÀM GET: Lấy thông tin 1 sản phẩm theo productID
@@ -280,9 +280,16 @@ export async function DELETE(req: Request) {
     await connection.commit();
     connection.release();
 
-    // 5. Xóa file ảnh vật lý trên ổ cứng
+    // 5. Xóa file ảnh vật lý trên ổ cứng trực tiếp qua media-storage.ts
     if (imagePath) {
-      deleteFile(imagePath);
+      const mediaList = String(imagePath)
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+      for (const mediaItem of mediaList) {
+        await deleteStoredMedia(mediaItem);
+      }
     }
 
     return NextResponse.json({

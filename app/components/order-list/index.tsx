@@ -1,12 +1,36 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import ButtonNewOder from "@/CountingComponent/buttonNewOder";
 import { STATUS_OPTIONS, getStatusLabel } from "@/components/attribute";
 
-export default function OrderList({ products = [] }: { products?: any[] }) {
+const ITEMS_PER_PAGE = 12;
+
+function resolveProductImageUrl(rawPath?: string | null): string {
+  if (!rawPath) return "";
+
+  const value = rawPath.trim();
+  if (!value) return "";
+
+  // Đã là URL đầy đủ http/https thì giữ nguyên
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  const trimmed = value.replace(/^\/+/, "");
+
+  // Nếu đã là đường dẫn /api/images/... hoặc /api/images?path=... thì giữ nguyên
+  if (trimmed.startsWith("api/images")) {
+    return `/${trimmed}`;
+  }
+
+  // Trường hợp path thô như "raw/2026/11/..." -> gọi qua query ?path=
+  return `/api/images?path=${encodeURIComponent(trimmed)}`;
+}
+
+export default function OrderList() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -19,61 +43,19 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
   const [expandedOrders, setExpandedOrders] = useState<Record<string, boolean>>(
     {},
   );
+  const [selectedStatus, setSelectedStatus] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const masterDataRef = useRef<any[]>([]);
-  const currentCustomerRef = useRef<string>("ALL");
-  const currentKeywordRef = useRef<string>("");
-  const currentStatusRef = useRef<string>("");
+  const currentCustomerRef = useRef("ALL");
+  const currentKeywordRef = useRef("");
+  const currentStatusRef = useRef("");
 
-  const [selectedStatus, setSelectedStatus] = useState<string>("");
-
-  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const value = e.target.value;
-    setSelectedStatus(value);
-    currentStatusRef.current = value;
-    applyCombinedFilter();
-  };
-
-  const fetchOrders = async (orderID?: string, silent = false) => {
-    if (silent) {
-      setIsRefreshing(true);
-    } else {
-      setLoading(true);
-    }
-
-    try {
-      const targetOrderID = orderID || currentCustomerRef.current || "ALL";
-      const response = await fetch(`/api/orderlist?orderID=${targetOrderID}`, {
-        cache: "no-store",
-      });
-      const result = await response.json();
-
-      const orderData = result.orders || result.data;
-      if (result.success && Array.isArray(orderData)) {
-        masterDataRef.current = orderData;
-        applyCombinedFilter();
-      } else {
-        masterDataRef.current = [];
-        setOrders([]);
-      }
-    } catch (error) {
-      console.error("Error loading the order list!!", error);
-      if (!silent) {
-        masterDataRef.current = [];
-        setOrders([]);
-      }
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-    }
-  };
-
-  const applyCombinedFilter = () => {
+  const applyCombinedFilter = useCallback(() => {
     const keyword = currentKeywordRef.current.toLowerCase().trim();
     const statusFilter = currentStatusRef.current;
-    const sourceData = masterDataRef.current;
 
-    const filtered = sourceData
+    const filtered = masterDataRef.current
       .map((order) => {
         const orderProducts = order.products || order.items || [];
 
@@ -91,26 +73,64 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
           return matchKeyword && matchStatus;
         });
 
-        if (matchedProducts.length > 0) {
-          return {
-            ...order,
-            products: matchedProducts,
-            items: matchedProducts,
-          };
-        }
-        return null;
+        if (matchedProducts.length === 0) return null;
+
+        return {
+          ...order,
+          products: matchedProducts,
+          items: matchedProducts,
+        };
       })
       .filter(Boolean);
 
     setOrders(filtered);
-  };
+  }, []);
+
+  const fetchOrders = useCallback(
+    async (orderID?: string, silent = false) => {
+      if (silent) {
+        setIsRefreshing(true);
+      } else {
+        setLoading(true);
+      }
+
+      try {
+        const targetOrderID = orderID || currentCustomerRef.current || "ALL";
+        const response = await fetch(
+          `/api/orderlist?orderID=${targetOrderID}`,
+          {
+            cache: "no-store",
+          },
+        );
+        const result = await response.json();
+
+        const orderData = result.orders || result.data;
+        if (result.success && Array.isArray(orderData)) {
+          masterDataRef.current = orderData;
+          applyCombinedFilter();
+        } else {
+          masterDataRef.current = [];
+          setOrders([]);
+        }
+      } catch (error) {
+        console.error("Error loading the order list!!", error);
+        if (!silent) {
+          masterDataRef.current = [];
+          setOrders([]);
+        }
+      } finally {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
+    },
+    [applyCombinedFilter],
+  );
 
   useEffect(() => {
     fetchOrders("ALL", false);
 
     const handleCustomerChange = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      const orderIdCode = customEvent.detail;
+      const orderIdCode = (event as CustomEvent).detail;
       if (orderIdCode) {
         currentCustomerRef.current = orderIdCode;
         setCurrentPage(1);
@@ -119,8 +139,7 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
     };
 
     const handleProductSearch = (event: Event) => {
-      const customEvent = event as CustomEvent;
-      currentKeywordRef.current = customEvent.detail || "";
+      currentKeywordRef.current = (event as CustomEvent).detail || "";
       setCurrentPage(1);
       applyCombinedFilter();
     };
@@ -132,7 +151,15 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
       window.removeEventListener("customerChanged", handleCustomerChange);
       window.removeEventListener("productSearchChanged", handleProductSearch);
     };
-  }, []);
+  }, [fetchOrders, applyCombinedFilter]);
+
+  const handleStatusChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setSelectedStatus(value);
+    currentStatusRef.current = value;
+    setCurrentPage(1);
+    applyCombinedFilter();
+  };
 
   const toggleOrder = (orderID: string) => {
     setExpandedOrders((prev) => ({
@@ -148,17 +175,17 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
     if (!pID) return;
 
     const params = new URLSearchParams(searchParams.toString());
-    params.set("productId", pID.toString());
+    params.set("productId", String(pID));
     router.push(`${pathname}?${params.toString()}`, { scroll: false });
   };
 
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 12;
+  const indexOfLastItem = currentPage * ITEMS_PER_PAGE;
+  const currentOrders = orders.slice(
+    indexOfLastItem - ITEMS_PER_PAGE,
+    indexOfLastItem,
+  );
+  const totalPages = Math.ceil(orders.length / ITEMS_PER_PAGE);
 
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentOrders = orders.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(orders.length / itemsPerPage);
   return (
     <aside className="lg:col-span-4 bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
       <div className="flex items-center justify-between p-2 sm:p-2.5 bg-linear-to-r from-amber-200 to-amber-400 border-b border-amber-300 gap-2">
@@ -169,13 +196,11 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
             className="w-full bg-amber-50/90 border border-amber-300 text-amber-950 text-xs font-semibold rounded-xl px-2.5 sm:px-3 py-1.5 sm:py-2 focus:outline-none focus:ring-2 focus:ring-amber-500/30 transition-all cursor-pointer shadow-xs"
           >
             <option value="">All Statuses</option>
-            {STATUS_OPTIONS.filter((item) => item.isActive).map(
-              (option, index) => (
-                <option key={index} value={option.value}>
-                  {option.label}
-                </option>
-              ),
-            )}
+            {STATUS_OPTIONS.filter((item) => item.isActive).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -201,14 +226,12 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
         </div>
       </div>
 
-      {/* Header cột cố định thẳng hàng */}
       <div className="grid grid-cols-12 items-center text-[11px] sm:text-xs text-gray-700 font-semibold uppercase bg-gray-50 border-b border-gray-200 px-3 sm:px-4 py-2.5">
         <div className="col-span-5">Order</div>
         <div className="col-span-3">Image</div>
         <div className="col-span-4 text-right">Status</div>
       </div>
 
-      {/* Vùng danh sách: trên mobile chỉ hiện vừa ~2 dòng đầu, có nhiều hơn thì cuộn dọc */}
       <div className="max-h-24 sm:max-h-none overflow-y-auto sm:overflow-visible divide-y divide-gray-100">
         {loading ? (
           <div className="text-center py-6 text-xs sm:text-sm text-gray-400">
@@ -224,7 +247,6 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
             const isExpanded = !!expandedOrders[orderID];
             const orderProducts = order.products || order.items || [];
 
-            // Đọc chính xác tên cột OrderStatus từ DB trả về
             const currentOrderStatus = String(
               order.status || "In Progress",
             ).trim();
@@ -313,15 +335,9 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
                                   {imageList.length > 0 ? (
                                     imageList.map(
                                       (imgStr: string, imgIndex: number) => {
-                                        const cleanImgStr = imgStr
-                                          .replace(/[\r\n]+/g, "")
-                                          .trim();
-                                        const filename = cleanImgStr
-                                          .split("/")
-                                          .pop();
-                                        const imgSrc = filename
-                                          ? `/api/images/${filename}`
-                                          : "";
+                                        const imgSrc =
+                                          resolveProductImageUrl(imgStr);
+                                        if (!imgSrc) return null;
 
                                         return (
                                           <div
@@ -332,6 +348,7 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
                                               src={imgSrc}
                                               alt={`Product img ${imgIndex + 1}`}
                                               className="w-full h-full object-cover"
+                                              loading="lazy"
                                             />
                                           </div>
                                         );
@@ -363,7 +380,7 @@ export default function OrderList({ products = [] }: { products?: any[] }) {
         )}
       </div>
 
-      {orders.length > itemsPerPage && (
+      {orders.length > ITEMS_PER_PAGE && (
         <div className="flex flex-col sm:flex-row items-center justify-between gap-2 px-3 sm:px-4 py-2.5 sm:py-3 bg-white border-t border-gray-200">
           <div className="text-xs sm:text-sm text-amber-600">
             Total <span className="font-semibold">{orders.length}</span> orders

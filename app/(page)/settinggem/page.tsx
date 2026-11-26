@@ -11,8 +11,83 @@ import Notification from "@/components/notification";
 
 import { Image, GemIcon, Upload, Download } from "lucide-react";
 
-export default function CastingPage() {
-  // 1. STATE QUẢN LÝ DỮ LIỆU CHUNG CHO BẢNG SANDING
+function buildMediaImageUrl(rawPath?: string | null): string {
+  if (!rawPath) return "";
+
+  const value = rawPath.trim();
+  if (!value) return "";
+
+  if (/^https?:\/\//i.test(value) || value.startsWith("blob:")) {
+    return value;
+  }
+
+  const queryIndex = value.indexOf("?path=");
+  if (queryIndex !== -1) {
+    const existingPath = value.slice(queryIndex + 6);
+    if (!existingPath) return "";
+
+    let decoded = existingPath;
+    if (/%[0-9A-Fa-f]{2}/.test(existingPath)) {
+      try {
+        decoded = decodeURIComponent(existingPath);
+      } catch {
+        decoded = existingPath;
+      }
+    }
+    return `/api/images?path=${encodeURIComponent(decoded)}`;
+  }
+
+  const trimmed = value.replace(/^\/+/, "");
+  if (trimmed.startsWith("api/images/")) {
+    const subPath = trimmed.slice("api/images/".length);
+    let decoded = subPath;
+    if (/%[0-9A-Fa-f]{2}/.test(subPath)) {
+      try {
+        decoded = decodeURIComponent(subPath);
+      } catch {
+        decoded = subPath;
+      }
+    }
+    return `/api/images?path=${encodeURIComponent(decoded)}`;
+  }
+
+  let normalizedPath = trimmed;
+  if (/%[0-9A-Fa-f]{2}/.test(trimmed)) {
+    try {
+      normalizedPath = decodeURIComponent(trimmed);
+    } catch {
+      normalizedPath = trimmed;
+    }
+  }
+
+  return `/api/images?path=${encodeURIComponent(normalizedPath)}`;
+}
+
+function extractStoredMediaPath(uploadResult: any): string | null {
+  if (uploadResult?.path && typeof uploadResult.path === "string") {
+    return uploadResult.path.trim().replace(/^\/+/, "");
+  }
+
+  if (uploadResult?.url && typeof uploadResult.url === "string") {
+    const urlStr = uploadResult.url.trim();
+    const qIdx = urlStr.indexOf("?path=");
+    if (qIdx !== -1) {
+      const rawParam = urlStr.slice(qIdx + 6);
+      try {
+        return decodeURIComponent(rawParam).replace(/^\/+/, "");
+      } catch {
+        return rawParam.replace(/^\/+/, "");
+      }
+    }
+    const parts = urlStr.split("/");
+    return parts[parts.length - 1] || null;
+  }
+
+  return null;
+}
+
+export default function SettingGemPage() {
+  // 1. STATE QUẢN LÝ DỮ LIỆU CHUNG CHO BẢNG SETTING GEMS
   const [settinggemData, setSettinggemData] = useState({
     productId: "",
     employName: "",
@@ -31,21 +106,21 @@ export default function CastingPage() {
   const [productImagePreviews, setProductImagePreviews] = useState<string[]>(
     [],
   );
+
   // Xử lý khi chọn file ảnh mới từ máy
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
+    if (e.target.files && e.target.files.length > 0) {
       const filesArray = Array.from(e.target.files);
 
-      // Cộng dồn file thật vào mảng
       setSelectedFiles((prev) => [...prev, ...filesArray]);
 
-      // Tạo URL blob tạm để hiển thị preview ngay lập tức
       const newPreviews = filesArray.map((file) => URL.createObjectURL(file));
       setProductImagePreviews((prev) => [...prev, ...newPreviews]);
     }
+    e.target.value = "";
   };
 
-  // 3. HÀM XÓA ẢNH (Xóa file trên ổ D và reset state ảnh)
+  // 3. HÀM XÓA ẢNH (Xóa file vật lý, cập nhật DB và reset state ảnh)
   const handleRemoveImage = async (index: number) => {
     try {
       const existingImages = settinggemData.settingIMG
@@ -55,15 +130,18 @@ export default function CastingPage() {
             .filter(Boolean)
         : [];
 
-      // Nếu bấm xóa ảnh cũ đã lưu trên DB / Ổ D
+      // Nếu bấm xóa ảnh cũ đã lưu trên DB / media storage
       if (index < existingImages.length) {
         const rawImgToDelete = existingImages[index];
 
-        // 1. Gọi API xóa file vật lý trên ổ D
+        // 1. Gọi API xóa file vật lý
         const deleteRes = await fetch("/api/deleteImage", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: rawImgToDelete }),
+          body: JSON.stringify({
+            path: rawImgToDelete,
+            filename: rawImgToDelete,
+          }),
         });
         const deleteResult = await deleteRes.json();
 
@@ -84,7 +162,6 @@ export default function CastingPage() {
         };
 
         const dbRes = await fetch("/api/settingGem", {
-          // Hoặc /api/settinggem tùy route của Qui
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(updatePayload),
@@ -99,6 +176,11 @@ export default function CastingPage() {
       } else {
         // Nếu xóa ảnh mới chọn tạm (chưa bấm Save)
         const fileIndex = index - existingImages.length;
+        const previewToRevoke = productImagePreviews[fileIndex];
+        if (previewToRevoke?.startsWith("blob:")) {
+          URL.revokeObjectURL(previewToRevoke);
+        }
+
         setSelectedFiles((prev) => prev.filter((_, i) => i !== fileIndex));
         setProductImagePreviews((prev) =>
           prev.filter((_, i) => i !== fileIndex),
@@ -118,21 +200,21 @@ export default function CastingPage() {
         return;
       }
 
-      // ⏱️ Lấy thời gian thực tại đúng khoảnh khắc click nút Save
       const realTimeTimestamp = new Date().toISOString();
 
-      let uploadedImageNames: string[] = settinggemData.settingIMG
+      let uploadedImagePaths: string[] = settinggemData.settingIMG
         ? settinggemData.settingIMG
             .split(",")
             .map((img) => img.trim())
             .filter(Boolean)
         : [];
 
-      // Upload các file ảnh mới chọn
+      // Upload các file ảnh mới chọn vào thư mục con "products"
       if (selectedFiles.length > 0) {
         for (const file of selectedFiles) {
           const uploadFormData = new FormData();
           uploadFormData.append("file", file);
+          uploadFormData.append("folder", "products");
 
           const uploadRes = await fetch("/api/uploadImage", {
             method: "POST",
@@ -140,10 +222,12 @@ export default function CastingPage() {
           });
 
           const uploadResult = await uploadRes.json();
-          if (uploadResult.success && uploadResult.url) {
-            const urlParts = uploadResult.url.split("/");
-            const fileName = urlParts[urlParts.length - 1];
-            uploadedImageNames.push(fileName);
+          const storedPath = uploadResult.success
+            ? extractStoredMediaPath(uploadResult)
+            : null;
+
+          if (uploadResult.success && storedPath) {
+            uploadedImagePaths.push(storedPath);
           } else {
             alert("Error uploading image: " + uploadResult.error);
             return;
@@ -151,8 +235,7 @@ export default function CastingPage() {
         }
       }
 
-      // Dùng Set lọc trùng lặp tên file tuyệt đối
-      const finalSettingImg = Array.from(new Set(uploadedImageNames)).join(",");
+      const finalSettingImg = Array.from(new Set(uploadedImagePaths)).join(",");
 
       const payload = {
         ...settinggemData,
@@ -160,12 +243,11 @@ export default function CastingPage() {
       };
 
       const response = await fetch("/api/settingGem", {
-        method: "PUT", // Cơ chế Upsert
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      // 🛡️ Kiểm tra nếu API trả về lỗi
       if (!response.ok) {
         const errorText = await response.text();
         throw new Error(`Server error (${response.status}): ${errorText}`);
@@ -174,9 +256,7 @@ export default function CastingPage() {
       const result = await response.json();
 
       if (result.success) {
-        // Cập nhật trạng thái sản phẩm sang bước kế tiếp và ghi log real-time
         try {
-          // 1. Cập nhật status vào bảng Products (dùng productID hoặc productId tùy theo backend của SettingGem nhận dạng)
           await fetch("/api/product", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -186,7 +266,6 @@ export default function CastingPage() {
             }),
           });
 
-          // 🚀 2. BỔ SUNG GỌI LOG REAL-TIME VÀO WORKFLOW LOGS
           await fetch("/api/WorkflowLogs", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -201,7 +280,11 @@ export default function CastingPage() {
 
         alert("Save Setting Successfully!");
 
-        // Cập nhật state chuẩn từ server và dọn sạch mảng tạm chống nhân đôi ảnh
+        productImagePreviews.forEach((url) => {
+          if (url.startsWith("blob:")) {
+            URL.revokeObjectURL(url);
+          }
+        });
         setSettinggemData((prev) => ({ ...prev, settingIMG: finalSettingImg }));
         setSelectedFiles([]);
         setProductImagePreviews([]);
@@ -214,7 +297,7 @@ export default function CastingPage() {
     }
   };
 
-  // Tổng hợp danh sách ảnh hiển thị
+  // Tổng hợp danh sách ảnh hiển thị qua /api/images?path=...
   const existingImages = settinggemData.settingIMG
     ? settinggemData.settingIMG
         .split(",")
@@ -223,12 +306,12 @@ export default function CastingPage() {
     : [];
 
   const rawImagesToShow = [
-    ...existingImages.map((img) => `/api/images/${img}`),
+    ...existingImages.map((img) => buildMediaImageUrl(img)),
     ...productImagePreviews,
-  ];
+  ].filter(Boolean);
 
-  // 🔥 Lọc trùng lặp tuyệt đối bằng Set
   const allImagesToShow = Array.from(new Set(rawImagesToShow));
+
   return (
     <div className="min-h-screen bg-white text-gray-800 font-sans">
       {/* 1. Thanh Navigation trên cùng */}
@@ -263,7 +346,7 @@ export default function CastingPage() {
                 </h3>
               </div>
 
-              {/* Component form con (Truyền state castingData và hàm cập nhật xuống component con) */}
+              {/* Component form con */}
               <SettingGem data={settinggemData} onChange={setSettinggemData} />
 
               {/* --- PICTURE FRAME & UPLOAD ANH --- */}
@@ -325,6 +408,7 @@ export default function CastingPage() {
                       <input
                         type="file"
                         accept="image/*"
+                        multiple
                         className="hidden"
                         onChange={handleImageChange}
                       />
@@ -339,10 +423,10 @@ export default function CastingPage() {
             <div className="flex justify-end mt-6 pt-4 border-t border-gray-200">
               <button
                 type="button"
-                onClick={handleSaveProcess} // Gắn hàm xử lý Upsert và Upload ảnh vào đây
+                onClick={handleSaveProcess}
                 className="inline-flex items-center gap-2 px-6 py-2.5 mb-20 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-sm font-semibold rounded-lg shadow-sm transition-all duration-200 focus:ring-2 focus:ring-amber-400 focus:outline-none cursor-pointer"
               >
-                <Download className="h-4 w-4"></Download>
+                <Download className="h-4 w-4" />
                 Save Process
               </button>
             </div>
